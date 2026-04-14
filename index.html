@@ -7,12 +7,13 @@
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>*{box-sizing:border-box;margin:0;padding:0}body{background:#FDF6EC;font-family:sans-serif;color:#2C1A0E}input,select,textarea,button{font-family:sans-serif}</style>
 </head>
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const {useState,useRef,useCallback}=React;
+const {useState,useRef,useCallback,useEffect}=React;
 const MENU=[
   {cat:"便當類 BENTO (含3樣小菜 / with 3 side dishes)",items:[
     {id:"b1",name:"排骨飯",nameEn:"Fry Pork Chop Bento",price:130},
@@ -82,6 +83,78 @@ function calcPromo(items,qty,promos){
     if(p.type==="addon")addonList.push(p);
   });
   return{disc,discLines,addonList};
+}
+
+function QRCodeShare({appUrl,BORDER,RED,NAVY,DARK}){
+  const qrContainerId="jiangway-qrcode";
+  const [showQR,setShowQR]=useState(false);
+  
+  useEffect(()=>{
+    if(showQR){
+      const container=document.getElementById(qrContainerId);
+      if(container){
+        container.innerHTML="";
+        new QRCode(container,{
+          text:appUrl,
+          width:250,
+          height:250,
+          colorDark:"#000000",
+          colorLight:"#ffffff",
+          correctLevel:QRCode.CorrectLevel.H
+        });
+      }
+    }
+  },[showQR,appUrl]);
+  
+  const downloadQR=()=>{
+    const canvas=document.querySelector(`#${qrContainerId} canvas`);
+    if(canvas){
+      const link=document.createElement("a");
+      link.download="jiangway-qrcode.png";
+      link.href=canvas.toDataURL();
+      link.click();
+    }
+  };
+  
+  return(
+    <div>
+      <div style={{fontSize:14,fontWeight:500,color:NAVY,marginBottom:16}}>📱 QR Code 分享</div>
+      
+      <div style={{background:"#fff",border:`1.5px solid ${BORDER}`,borderRadius:12,padding:"16px",marginBottom:16}}>
+        <div style={{fontSize:13,fontWeight:500,color:NAVY,marginBottom:10}}>🔗 應用連結</div>
+        <div style={{background:"#F5F5F5",padding:"10px 12px",borderRadius:8,fontSize:12,color:"#666",wordBreak:"break-all",marginBottom:12,fontFamily:"monospace",lineHeight:1.6}}>{appUrl}</div>
+        
+        <button onClick={()=>setShowQR(!showQR)} style={{width:"100%",background:RED,color:"#fff",border:"none",borderRadius:8,padding:"12px",fontSize:14,fontWeight:500,cursor:"pointer",marginBottom:10}}>{showQR?"隱藏 Hide":"生成 QR Code Generate"}</button>
+      </div>
+      
+      {showQR&&<>
+        <div style={{background:"#fff",border:`1.5px solid ${BORDER}`,borderRadius:12,padding:"16px",marginBottom:16,textAlign:"center"}}>
+          <div style={{fontSize:13,fontWeight:500,color:NAVY,marginBottom:12}}>掃描此 QR Code 打開點餐 app</div>
+          <div id={qrContainerId} style={{display:"flex",justifyContent:"center",marginBottom:12}}/>
+          <div style={{fontSize:11,color:"#888",marginBottom:12}}>高容錯等級 — 部分損毀仍可掃描</div>
+          <button onClick={downloadQR} style={{width:"100%",background:NAVY,color:"#fff",border:"none",borderRadius:8,padding:"12px",fontSize:13,fontWeight:500,cursor:"pointer"}}>⬇️ 下載 QR Code Download</button>
+        </div>
+        
+        <div style={{background:"#FFF9E6",border:"1.5px solid #FFE082",borderRadius:10,padding:"12px 14px",marginBottom:16,fontSize:12,color:"#7A5800",lineHeight:1.6}}>
+          💡 <strong>使用提示：</strong><br/>
+          ✅ 在 WeChat 中直接掃描此 QR Code<br/>
+          ✅ 可下載列印在店裡或菜單上<br/>
+          ✅ 在社群媒體（IG、Facebook）分享此圖片<br/>
+          ✅ 客人掃描後會直接在 WeChat 內打開點餐頁面<br/>
+        </div>
+        
+        <div style={{background:"#F0F7FF",border:"1.5px solid #B5D4F4",borderRadius:10,padding:"12px 14px"}}>
+          <div style={{fontSize:13,fontWeight:500,color:"#0C447C",marginBottom:8}}>📲 WeChat 使用方式</div>
+          <div style={{fontSize:12,color:"#555",lineHeight:1.6}}>
+            1️⃣ 客人在 WeChat 內按「掃一掃」<br/>
+            2️⃣ 對著 QR Code 掃描<br/>
+            3️⃣ 自動打開點餐 app<br/>
+            4️⃣ 點餐、支付、所有功能正常使用
+          </div>
+        </div>
+      </>}
+    </div>
+  );
 }
 
 function AnalyticsTab({orders,BORDER,RED,NAVY,DARK}){
@@ -320,7 +393,34 @@ function App(){
       note?`📝 ${note}`:null,
     ].filter(Boolean).join("\n");
   };
-  const sendWA=()=>window.open(`https://wa.me/${WA}?text=${encodeURIComponent(orderTxt())}`,"_blank");
+  const isInWeChat=()=>/micromessenger/i.test(navigator.userAgent);
+  const sendWA=()=>{
+    const txt=orderTxt();
+    const encoded=encodeURIComponent(txt);
+    const waNum=WA;
+    
+    if(isInWeChat()){
+      copy();
+      alert("📋 訂單文字已複製！\n\n因為您在 WeChat 內無法直接跳轉到 WhatsApp。\n\n請按以下步驟：\n1️⃣ 打開 WhatsApp\n2️⃣ 開啟與江味齋的對話\n3️⃣ 長按輸入框選「貼上」");
+    } else {
+      const appUrl=`whatsapp://send?phone=${waNum}&text=${encoded}`;
+      const webUrl=`https://wa.me/${waNum}?text=${encoded}`;
+      const iframe=document.createElement("iframe");
+      iframe.style.display="none";
+      iframe.src=appUrl;
+      document.body.appendChild(iframe);
+      const timeoutId=setTimeout(()=>{
+        try{document.body.removeChild(iframe);}catch(e){}
+        window.open(webUrl,"_blank");
+      },1500);
+      const blurHandler=()=>{
+        clearTimeout(timeoutId);
+        try{document.body.removeChild(iframe);}catch(e){}
+        window.removeEventListener("blur",blurHandler);
+      };
+      window.addEventListener("blur",blurHandler,{once:true});
+    }
+  };
   const copy=()=>{
     const txt=orderTxt();
     if(navigator.clipboard){navigator.clipboard.writeText(txt).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2500);});}
@@ -368,7 +468,7 @@ function App(){
       <div style={{background:NAVY,padding:"14px 20px 0",textAlign:"center"}}>
         <div style={{fontSize:17,fontWeight:500,color:"#fff",paddingBottom:12}}>⚙️ 店主管理 Staff Mode</div>
         <div style={{display:"flex",borderTop:"1px solid rgba(255,255,255,0.2)"}}>
-          {[["stock","庫存"],["promo","促銷"],["settings","設定"],["orders","訂單"],["analytics","分析"]].map(([k,l])=>(
+          {[["stock","庫存"],["promo","促銷"],["settings","設定"],["orders","訂單"],["analytics","分析"],["qrcode","QR Code"]].map(([k,l])=>(
             <button key={k} onClick={()=>setAdminTab(k)} style={{flex:1,padding:"10px 4px",border:"none",background:"transparent",color:adminTab===k?"#fff":"rgba(255,255,255,0.55)",fontWeight:adminTab===k?500:400,fontSize:13,cursor:"pointer",borderBottom:adminTab===k?"3px solid #fff":"3px solid transparent"}}>{l}</button>
           ))}
         </div>
@@ -432,6 +532,7 @@ function App(){
           <button onClick={()=>{if(confirm("確定清除所有訂單記錄？")){localStorage.removeItem("jw_orders");localStorage.removeItem("jw_no");setOrders([]);}}} style={{width:"100%",padding:"10px",borderRadius:8,border:`1.5px solid ${BORDER}`,background:"#fff",color:"#aaa",fontSize:12,cursor:"pointer",marginTop:8}}>清除記錄</button>
         </>}
         {adminTab==="analytics"&&<AnalyticsTab orders={orders} BORDER={BORDER} RED={RED} NAVY={NAVY} DARK={DARK}/>}
+        {adminTab==="qrcode"&&<QRCodeShare appUrl={typeof window!=="undefined"?window.location.href:""} BORDER={BORDER} RED={RED} NAVY={NAVY} DARK={DARK}/>}
 
         <button onClick={()=>setMode("customer")} style={{width:"100%",background:NAVY,color:"#fff",border:"none",borderRadius:8,padding:"13px",fontSize:14,fontWeight:500,cursor:"pointer",marginTop:16}}>完成，回到點餐 Done</button>
       </div>
@@ -603,7 +704,7 @@ function App(){
             {note&&<div style={{marginTop:10,fontSize:12,color:"#666",borderTop:`1px solid ${BORDER}`,paddingTop:8}}>備註：{note}</div>}
           </div>
           <div style={{background:"#F5F5F5",borderRadius:10,padding:"12px 14px",marginBottom:14,fontFamily:"monospace",fontSize:12,whiteSpace:"pre-wrap",color:DARK,lineHeight:1.7}}>{orderTxt()}</div>
-          <button onClick={sendWA} style={{width:"100%",padding:"13px",borderRadius:8,border:"none",background:"#25D366",color:"#fff",fontSize:14,fontWeight:500,cursor:"pointer",marginBottom:10}}>📲 傳送到 WhatsApp Send via WhatsApp</button>
+          <button onClick={sendWA} style={{width:"100%",padding:"13px",borderRadius:8,border:"none",background:"#25D366",color:"#fff",fontSize:14,fontWeight:500,cursor:"pointer",marginBottom:10}}>📲 {isInWeChat()?"複製訂單到 WhatsApp Copy to WhatsApp":"傳送到 WhatsApp Send via WhatsApp"}</button>
           <button onClick={copy} style={{width:"100%",padding:"12px",borderRadius:8,border:`2px solid ${copied?"#27AE60":RED}`,background:copied?"#27AE60":"#fff",color:copied?"#fff":RED,fontSize:13,fontWeight:500,cursor:"pointer",marginBottom:10}}>{copied?"✓ 已複製！Copied!":"複製訂單文字 Copy Text"}</button>
           <button onClick={reset} style={{width:"100%",padding:"12px",borderRadius:8,border:`1.5px solid ${BORDER}`,background:"#fff",color:"#888",fontSize:13,cursor:"pointer"}}>+ 新增訂單 New Order</button>
         </div>}
