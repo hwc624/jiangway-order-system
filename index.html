@@ -395,6 +395,7 @@ function App(){
     ].filter(Boolean).join("\n");
   };
   const isInWeChat=()=>/micromessenger/i.test(navigator.userAgent);
+  const isIPhone=()=>/iPhone|iPad|iPod/.test(navigator.userAgent);
   const sendWA=()=>{
     const txt=orderTxt();
     const encoded=encodeURIComponent(txt);
@@ -403,7 +404,11 @@ function App(){
     if(isInWeChat()){
       copy();
       alert("📋 訂單文字已複製！\n\n因為您在 WeChat 內無法直接跳轉到 WhatsApp。\n\n請按以下步驟：\n1️⃣ 打開 WhatsApp\n2️⃣ 開啟與江味齋的對話\n3️⃣ 長按輸入框選「貼上」");
+    } else if(isIPhone()){
+      // iPhone 特殊處理 — 直接用 wa.me Web 連結（最可靠）
+      window.location.href=`https://wa.me/${waNum}?text=${encoded}`;
     } else {
+      // Android 和其他瀏覽器 — 先嘗試 App，再回退到 Web
       const appUrl=`whatsapp://send?phone=${waNum}&text=${encoded}`;
       const webUrl=`https://wa.me/${waNum}?text=${encoded}`;
       const iframe=document.createElement("iframe");
