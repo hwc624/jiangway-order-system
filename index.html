@@ -8,10 +8,30 @@
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js"></script>
 <style>*{box-sizing:border-box;margin:0;padding:0}body{background:#FDF6EC;font-family:sans-serif;color:#2C1A0E}input,select,textarea,button{font-family:sans-serif}</style>
 </head>
 <body>
 <div id="root"></div>
+<script>
+// Firebase 初始化（使用公開配置 - Realtime Database 足夠）
+const firebaseConfig = {
+  apiKey: "AIzaSyDummyKeyForPublicDatabase",
+  authDomain: "jiangway-bk-end-management.firebaseapp.com",
+  databaseURL: "https://jiangway-bk-end-management-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "jiangway-bk-end-management"
+};
+
+try {
+  firebase.initializeApp(firebaseConfig);
+  window.fbDb = firebase.database();
+  console.log("✅ Firebase 已連接");
+} catch(e) {
+  console.error("⚠️ Firebase 連接失敗:", e.message);
+  window.fbDb = null;
+}
+</script>
 <script type="text/babel">
 const {useState,useRef,useCallback,useEffect}=React;
 const MENU=[
@@ -55,11 +75,13 @@ const MENU=[
 ];
 const ALL=MENU.flatMap(c=>c.items);
 const RED="#C0392B",DARK="#2C1A0E",BORDER="#E8D5B7",NAVY="#2C3E50";
-const WA="27791325590",PIN="90888";
+const WA="27791325590",PIN="90888",WAGROUP="FoKtpmRCv4rKgYpGOph73x";
 
 function getNo(){const n=parseInt(localStorage.getItem("jw_no")||"0")+1;localStorage.setItem("jw_no",n);return String(n).padStart(4,"0");}
 function saveOrd(o){const l=JSON.parse(localStorage.getItem("jw_orders")||"[]");l.unshift(o);localStorage.setItem("jw_orders",JSON.stringify(l.slice(0,100)));}
 function loadOrds(){return JSON.parse(localStorage.getItem("jw_orders")||"[]");}
+function loadSoldOut(){return JSON.parse(localStorage.getItem("jw_soldOut")||"{}");}
+function saveSoldOut(so){localStorage.setItem("jw_soldOut",JSON.stringify(so));}
 
 function getDates(){const d=[],now=new Date(),cur=new Date(now);while(d.length<14){if(cur.getDay()!==6)d.push(new Date(cur));cur.setDate(cur.getDate()+1);}return d;}
 const fmtDate=d=>d.toLocaleDateString("zh-TW",{month:"short",day:"numeric",weekday:"short"});
@@ -339,6 +361,25 @@ function App(){
   const [eftProofFile,setEftProofFile]=useState(null);
   const nRef=useRef(""),phRef=useRef(""),adRef=useRef(""),noRef=useRef(""),pinRef=useRef(""),minRef=useRef("0"),feeRef=useRef("0");
 
+  // Firebase 即時同步售完狀態
+  useEffect(()=>{
+    if(!window.fbDb){
+      console.warn("⚠️ Firebase 未連接");
+      return;
+    }
+    
+    const dbRef=window.fbDb.ref("soldOut");
+    const unsubscribe=dbRef.on("value",snapshot=>{
+      const data=snapshot.val()||{};
+      setSoldOut(data);
+      console.log("📡 從 Firebase 更新售完狀態:", data);
+    },error=>{
+      console.error("❌ Firebase 讀取錯誤:", error.message);
+    });
+    
+    return ()=>dbRef.off("value",unsubscribe);
+  },[]);
+
   const qty=id=>cart[id]||0;
   const cartItems=ALL.filter(i=>qty(i.id)>0);
   const sub=cartItems.reduce((s,i)=>s+i.price*qty(i.id),0);
@@ -399,25 +440,25 @@ function App(){
   const sendWA=()=>{
     const txt=orderTxt();
     const encoded=encodeURIComponent(txt);
-    const waNum=WA;
+    const groupId=WAGROUP;
     
     if(isInWeChat()){
       copy();
-      alert("📋 訂單文字已複製！\n\n因為您在 WeChat 內無法直接跳轉到 WhatsApp。\n\n請按以下步驟：\n1️⃣ 打開 WhatsApp\n2️⃣ 開啟與江味齋的對話\n3️⃣ 長按輸入框選「貼上」");
+      alert("📋 訂單文字已複製！\n\n因為您在 WeChat 內無法直接跳轉到 WhatsApp。\n\n請按以下步驟：\n1️⃣ 打開 WhatsApp\n2️⃣ 開啟江味齋管理群組\n3️⃣ 長按輸入框選「貼上」");
     } else if(isIPhone()){
-      // iPhone 特殊處理 — 直接用 wa.me Web 連結（最可靠）
-      window.location.href=`https://wa.me/${waNum}?text=${encoded}`;
+      // iPhone — 發送到 WhatsApp 群組
+      window.location.href=`https://chat.whatsapp.com/${groupId}?text=${encoded}`;
     } else {
-      // Android 和其他瀏覽器 — 先嘗試 App，再回退到 Web
-      const appUrl=`whatsapp://send?phone=${waNum}&text=${encoded}`;
-      const webUrl=`https://wa.me/${waNum}?text=${encoded}`;
+      // Android — 先嘗試群組 App，再用 Web
+      const appUrl=`whatsapp://send?phone=&group=${groupId}&text=${encoded}`;
+      const webUrl=`https://chat.whatsapp.com/${groupId}?text=${encoded}`;
       const iframe=document.createElement("iframe");
       iframe.style.display="none";
       iframe.src=appUrl;
       document.body.appendChild(iframe);
       const timeoutId=setTimeout(()=>{
         try{document.body.removeChild(iframe);}catch(e){}
-        window.open(webUrl,"_blank");
+        window.location.href=webUrl;
       },1500);
       const blurHandler=()=>{
         clearTimeout(timeoutId);
@@ -483,13 +524,25 @@ function App(){
         {adminTab==="stock"&&<>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
             <div style={{fontSize:13,color:"#555"}}>售完：<span style={{color:RED,fontWeight:500}}>{Object.values(soldOut).filter(Boolean).length} 項</span></div>
-            <button onClick={()=>setSoldOut({})} style={{padding:"7px 14px",borderRadius:8,border:`1.5px solid ${BORDER}`,background:"#fff",color:DARK,fontSize:12,cursor:"pointer"}}>全部恢復 Reset All</button>
+            <button onClick={()=>{
+              const newState={};
+              if(window.fbDb){
+                window.fbDb.ref("soldOut").set(newState).catch(e=>console.error("❌ Firebase 寫入錯誤:",e.message));
+              }
+              setSoldOut(newState);
+            }} style={{padding:"7px 14px",borderRadius:8,border:`1.5px solid ${BORDER}`,background:"#fff",color:DARK,fontSize:12,cursor:"pointer"}}>全部恢復 Reset All</button>
           </div>
           {MENU.map(cat=>(
             <div key={cat.cat} style={{marginBottom:18}}>
               <div style={{fontSize:12,fontWeight:500,color:NAVY,marginBottom:8,borderBottom:`1px solid ${BORDER}`,paddingBottom:4}}>{cat.cat}</div>
               {cat.items.map(item=>{const out=soldOut[item.id];return(
-                <div key={item.id} onClick={()=>setSoldOut(s=>({...s,[item.id]:!s[item.id]}))} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"11px 14px",marginBottom:6,borderRadius:10,cursor:"pointer",background:out?"#FFF0F0":"#fff",border:`1.5px solid ${out?RED:BORDER}`}}>
+                <div key={item.id} onClick={()=>{
+                  const newState={...soldOut,[item.id]:!soldOut[item.id]};
+                  if(window.fbDb){
+                    window.fbDb.ref("soldOut").set(newState).catch(e=>console.error("❌ Firebase 寫入錯誤:",e.message));
+                  }
+                  setSoldOut(newState);
+                }} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"11px 14px",marginBottom:6,borderRadius:10,cursor:"pointer",background:out?"#FFF0F0":"#fff",border:`1.5px solid ${out?RED:BORDER}`}}>
                   <div><div style={{fontSize:14,color:out?"#aaa":DARK,textDecoration:out?"line-through":"none"}}>{item.name}</div><div style={{fontSize:11,color:"#aaa"}}>{item.nameEn} · R{item.price}</div></div>
                   <div style={{padding:"4px 12px",borderRadius:20,fontSize:12,fontWeight:500,background:out?RED:"#E8F5E9",color:out?"#fff":"#27AE60"}}>{out?"售完":"有貨"}</div>
                 </div>
