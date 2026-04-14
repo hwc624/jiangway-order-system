@@ -433,6 +433,8 @@ function App(){
       disc>0?`折扣：-R${disc}`:null,
       `💰 合計 Total：R${total}`,
       note?`📝 ${note}`:null,
+      "",
+      "👥 請轉發到管理群組 / Please forward to management group",
     ].filter(Boolean).join("\n");
   };
   const isInWeChat=()=>/micromessenger/i.test(navigator.userAgent);
@@ -440,18 +442,18 @@ function App(){
   const sendWA=()=>{
     const txt=orderTxt();
     const encoded=encodeURIComponent(txt);
-    const groupId=WAGROUP;
+    const waNum=WA; // 27791325590
     
     if(isInWeChat()){
       copy();
-      alert("📋 訂單文字已複製！\n\n因為您在 WeChat 內無法直接跳轉到 WhatsApp。\n\n請按以下步驟：\n1️⃣ 打開 WhatsApp\n2️⃣ 開啟江味齋管理群組\n3️⃣ 長按輸入框選「貼上」");
+      alert("📋 訂單文字已複製！\n\n因為您在 WeChat 內無法直接跳轉到 WhatsApp。\n\n請按以下步驟：\n1️⃣ 打開 WhatsApp\n2️⃣ 搜尋江味齋\n3️⃣ 長按輸入框選「貼上」");
     } else if(isIPhone()){
-      // iPhone — 發送到 WhatsApp 群組
-      window.location.href=`https://chat.whatsapp.com/${groupId}?text=${encoded}`;
+      // iPhone — 發送到個人 WhatsApp
+      window.location.href=`https://wa.me/${waNum}?text=${encoded}`;
     } else {
-      // Android — 先嘗試群組 App，再用 Web
-      const appUrl=`whatsapp://send?phone=&group=${groupId}&text=${encoded}`;
-      const webUrl=`https://chat.whatsapp.com/${groupId}?text=${encoded}`;
+      // Android — 先嘗試 App，再用 Web
+      const appUrl=`whatsapp://send?phone=${waNum}&text=${encoded}`;
+      const webUrl=`https://wa.me/${waNum}?text=${encoded}`;
       const iframe=document.createElement("iframe");
       iframe.style.display="none";
       iframe.src=appUrl;
