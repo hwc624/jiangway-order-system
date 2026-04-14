@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>江味齋 JiangWay</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>*{box-sizing:border-box;margin:0;padding:0}body{background:#FDF6EC;font-family:sans-serif;color:#2C1A0E}input,select,textarea,button{font-family:sans-serif}</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useRef,useCallback}=React;
+const MENU=[
+  {cat:"便當類 BENTO (含3樣小菜 / with 3 side dishes)",items:[
+    {id:"b1",name:"排骨飯",nameEn:"Fry Pork Chop Bento",price:130},
+    {id:"b2",name:"滷排飯",nameEn:"Braised Pork Chop Bento",price:140},
+    {id:"b3",name:"蜜汁雞飯",nameEn:"Honey Glazed Chicken Bento",price:140},
+    {id:"b4",name:"椒麻雞飯",nameEn:"TW Pepper Chicken Bento",price:140},
+    {id:"b5",name:"控肉飯",nameEn:"Braised Pork Belly Bento",price:140},
+    {id:"b6",name:"雞排飯",nameEn:"Fry Chicken Cutlet Bento",price:140},
+    {id:"b7",name:"刷醬雞排飯",nameEn:"Brushed Fry Chicken Bento",price:140},
+    {id:"b8",name:"素食飯",nameEn:"Vegetarian Bento",price:140},
+  ]},
+  {cat:"單點 A LA CARTE",items:[
+    {id:"a1",name:"蔥油餅＋蛋（胡椒鹽）",nameEn:"Scallion Egg Crepe (Pepper Salt)",price:45},
+    {id:"a2",name:"蔥油餅＋蛋（刷醬）",nameEn:"Scallion Egg Crepe (Sauced)",price:50},
+    {id:"a3",name:"炸甜不辣",nameEn:"Fried Fish Cakes",price:50},
+    {id:"a4",name:"炸花枝丸",nameEn:"Fried Squid Balls",price:55},
+    {id:"a5",name:"炸芋籤",nameEn:"Fry Taro Cube",price:65},
+    {id:"a6",name:"滷肉飯",nameEn:"Braised Pork Mince Rice",price:65},
+    {id:"a7",name:"鹽酥雞",nameEn:"Popcorn Chicken",price:90},
+    {id:"a8",name:"刷醬雞排",nameEn:"Brushed Sauce Chicken Cutlet",price:90},
+    {id:"a9",name:"蜜汁雞排",nameEn:"Honey Glazed Chicken Cutlet",price:90},
+    {id:"a10",name:"香腸飯",nameEn:"TW Sausage Rice",price:100},
+  ]},
+  {cat:"麵類 NOODLE",items:[
+    {id:"n1",name:"肉羹麵",nameEn:"Pork Thick Soup Noodle",price:130},
+    {id:"n2",name:"榨菜肉絲麵",nameEn:"Shredded Pork & Pickled Veg Noodle",price:130},
+    {id:"n3",name:"滷排麵",nameEn:"Braised Pork Chop Noodle",price:140},
+  ]},
+  {cat:"飲料 DRINKS",items:[
+    {id:"d1",name:"麥香紅茶",nameEn:"Wheat Black Tea",price:20},
+    {id:"d2",name:"麥香奶茶",nameEn:"Wheat Milk Tea",price:20},
+    {id:"d3",name:"猛將黑豆漿",nameEn:"Black Soybean Milk",price:30},
+    {id:"d4",name:"猛將椰奶",nameEn:"Coconut Milk Drink",price:30},
+    {id:"d5",name:"黑松沙士",nameEn:"Heysong Sarsaparilla",price:30},
+    {id:"d6",name:"Valpre 礦泉水",nameEn:"Valpre Still Water",price:20},
+    {id:"d7",name:"Valpre 氣泡水",nameEn:"Valpre Sparkling Water",price:20},
+  ]},
+];
+const ALL=MENU.flatMap(c=>c.items);
+const RED="#C0392B",DARK="#2C1A0E",BORDER="#E8D5B7",NAVY="#2C3E50";
+const WA="27791325590",PIN="90888";
+
+function getNo(){const n=parseInt(localStorage.getItem("jw_no")||"0")+1;localStorage.setItem("jw_no",n);return String(n).padStart(4,"0");}
+function saveOrd(o){const l=JSON.parse(localStorage.getItem("jw_orders")||"[]");l.unshift(o);localStorage.setItem("jw_orders",JSON.stringify(l.slice(0,100)));}
+function loadOrds(){return JSON.parse(localStorage.getItem("jw_orders")||"[]");}
+
+function getDates(){const d=[],now=new Date(),cur=new Date(now);while(d.length<14){if(cur.getDay()!==6)d.push(new Date(cur));cur.setDate(cur.getDate()+1);}return d;}
+const fmtDate=d=>d.toLocaleDateString("zh-TW",{month:"short",day:"numeric",weekday:"short"});
+const fmtKey=d=>d.toISOString().split("T")[0];
+const isToday=d=>fmtKey(d)===fmtKey(new Date());
+function getSlots(dt){
+  const now=new Date(),day=dt.getDay(),end=day===0?14:19,slots=[],td=isToday(dt);
+  if(td)slots.push("盡快 ASAP");
+  for(let h=10;h<=end;h++)for(const m of[0,15,30,45]){
+    if(h===10&&m<30)continue;if(h===end&&m>0)continue;
+    if(td){const sd=new Date(now);sd.setHours(h,m,0,0);if(sd<=new Date(now.getTime()+600000))continue;}
+    slots.push(`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`);
+  }
+  return slots;
+}
+function calcPromo(items,qty,promos){
+  let disc=0;const discLines=[],addonList=[];
+  const sub=items.reduce((s,i)=>s+i.price*qty(i.id),0);
+  promos.filter(p=>p.active).forEach(p=>{
+    if(p.type==="order_discount"){const d=Math.round(sub*(p.pct/100));disc+=d;discLines.push(`🎉 ${p.label}：-R${d}`);}
+    if(p.type==="item_discount"){items.filter(i=>i.id===p.itemId).forEach(i=>{const d=Math.round(i.price*qty(i.id)*(p.pct/100));disc+=d;discLines.push(`🎉 ${p.label}：-R${d}`);});}
+    if(p.type==="addon")addonList.push(p);
+  });
+  return{disc,discLines,addonList};
+}
+
+function App(){
+  const [mode,setMode]=useState("customer");
+  const [adminTab,setAdminTab]=useState("stock");
+  const [pinErr,setPinErr]=useState(false);
+  const [soldOut,setSoldOut]=useState({});
+  const [promos,setPromos]=useState([]);
+  const [minOrder,setMinOrder]=useState(0);
+  const [delivFee,setDelivFee]=useState(0);
+  const [orders,setOrders]=useState(loadOrds);
+  const [aFilter,setAFilter]=useState("item");
+  const [aDate,setADate]=useState("");
+  const [aSort,setASort]=useState("rev");
+  const [step,setStep]=useState(1);
+  const [nameVal,setNameVal]=useState("");
+  const [phoneVal,setPhoneVal]=useState("");
+  const [cart,setCart]=useState({});
+  const [addonQty,setAddonQty]=useState({});
+  const [pickup,setPickup]=useState("外帶");
+  const [addr,setAddr]=useState("");
+  const [pay,setPay]=useState("現金");
+  const [selDate,setSelDate]=useState(null);
+  const [time,setTime]=useState("");
+  const [note,setNote]=useState("");
+  const [copied,setCopied]=useState(false);
+  const [ordNo,setOrdNo]=useState("");
+  const [pForm,setPForm]=useState({type:"order_discount",label:"",pct:"",itemId:"",addonName:"",addonPrice:""});
+  const nRef=useRef(""),phRef=useRef(""),adRef=useRef(""),noRef=useRef(""),pinRef=useRef(""),minRef=useRef("0"),feeRef=useRef("0");
+
+  const qty=id=>cart[id]||0;
+  const cartItems=ALL.filter(i=>qty(i.id)>0);
+  const sub=cartItems.reduce((s,i)=>s+i.price*qty(i.id),0);
+  const bentoCnt=cartItems.filter(i=>i.id.startsWith("b")).reduce((s,i)=>s+qty(i.id),0);
+  const {disc,discLines,addonList}=calcPromo(cartItems,qty,promos);
+  const addonTotal=addonList.reduce((s,p)=>s+(p.addonPrice*(addonQty[p.id]||0)),0);
+  const fee=pickup==="外送"&&bentoCnt<10?delivFee:0;
+  const total=sub-disc+addonTotal+fee;
+  const belowMin=minOrder>0&&sub<minOrder;
+  const activePromos=promos.filter(p=>p.active);
+  const slots=selDate?getSlots(selDate):[];
+  const dates=getDates();
+
+  const adj=useCallback((id,d)=>setCart(c=>{const n=Math.max(0,(c[id]||0)+d);const x={...c};if(n===0)delete x[id];else x[id]=n;return x;}),[]);
+  const adjA=(id,d)=>setAddonQty(a=>({...a,[id]:Math.max(0,(a[id]||0)+d)}));
+  const tryPin=()=>{if(pinRef.current===PIN){setMode("admin");setPinErr(false);pinRef.current="";}else setPinErr(true);};
+  const go2=()=>{setNameVal(nRef.current);setPhoneVal(phRef.current);if(nRef.current.trim())setStep(2);};
+  const go4=()=>{
+    setAddr(adRef.current);setNote(noRef.current);
+    const no=getNo();setOrdNo(no);
+    const o={no,name:nameVal,phone:phoneVal,items:cartItems.map(i=>({name:i.name,qty:qty(i.id),price:i.price})),total,pickup,addr:adRef.current,pay:pay==="現金"?"現金 Cash":pay==="餐券"?"餐券 Voucher":"EFT",date:selDate?fmtDate(selDate):"",time,note:noRef.current,ts:new Date().toLocaleString("zh-TW")};
+    saveOrd(o);setOrders(loadOrds());setStep(4);
+  };
+  const pickLbl=()=>pickup==="外帶"?"外帶 Takeaway":pickup==="外送"?"外送 Delivery":"內用 Dine-in";
+  const payLbl=()=>pay==="現金"?"現金 Cash":pay==="餐券"?"餐券 Voucher":"EFT";
+  const orderTxt=()=>{
+    const em=pickup==="外送"?"🛵":pickup==="內用"?"🪑":"🥡";
+    const aLines=addonList.filter(p=>(addonQty[p.id]||0)>0).map(p=>`  ＋${p.addonName} × ${addonQty[p.id]}　R${p.addonPrice*addonQty[p.id]}`);
+    return[
+      `🏮 江味齋 JiangWay 訂單 #${ordNo}`,
+      `📅 ${new Date().toLocaleDateString("zh-TW",{year:"numeric",month:"long",day:"numeric",weekday:"short"})}`,
+      "─────────────────────",
+      `👤 ${nameVal}${phoneVal?` · ${phoneVal}`:""}`,
+      `${em} ${pickLbl()}${pickup==="外送"&&addr?`：${addr}`:""}`,
+      (selDate||time)?`🗓 ${selDate?fmtDate(selDate):""} ${time}`.trim():null,
+      `💳 ${payLbl()}`,
+      "─────────────────────",
+      ...cartItems.map(i=>`  ${i.name} ${i.nameEn} × ${qty(i.id)}　R${i.price*qty(i.id)}`),
+      ...aLines,
+      (discLines.length||fee>0)?"─────────────────────":null,
+      ...discLines,
+      fee>0?`🛵 外送費：R${fee}`:null,
+      "─────────────────────",
+      disc>0?`小計：R${sub}`:null,
+      disc>0?`折扣：-R${disc}`:null,
+      `💰 合計 Total：R${total}`,
+      note?`📝 ${note}`:null,
+    ].filter(Boolean).join("\n");
+  };
+  const sendWA=()=>window.open(`https://wa.me/${WA}?text=${encodeURIComponent(orderTxt())}`,"_blank");
+  const copy=()=>{
+    const txt=orderTxt();
+    if(navigator.clipboard){navigator.clipboard.writeText(txt).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2500);});}
+    else{const t=document.createElement("textarea");t.value=txt;document.body.appendChild(t);t.select();document.execCommand("copy");document.body.removeChild(t);setCopied(true);setTimeout(()=>setCopied(false),2500);}
+  };
+  const reset=()=>{nRef.current="";phRef.current="";adRef.current="";noRef.current="";setStep(1);setNameVal("");setPhoneVal("");setCart({});setAddonQty({});setPickup("外帶");setAddr("");setPay("現金");setSelDate(null);setTime("");setNote("");setCopied(false);setOrdNo("");};
+  const addPromo=()=>{
+    if(!pForm.label)return;
+    if(pForm.type!=="addon"&&!pForm.pct)return;
+    if(pForm.type==="item_discount"&&!pForm.itemId)return;
+    if(pForm.type==="addon"&&(!pForm.addonName||!pForm.addonPrice))return;
+    setPromos(ps=>[...ps,{...pForm,id:Date.now()+"",active:true,pct:parseFloat(pForm.pct)||0,addonPrice:parseFloat(pForm.addonPrice)||0}]);
+    setPForm({type:"order_discount",label:"",pct:"",itemId:"",addonName:"",addonPrice:""});
+  };
+
+  const IS={width:"100%",padding:"10px 12px",borderRadius:8,border:`1.5px solid ${BORDER}`,fontSize:16,background:"#fff",color:DARK,marginTop:6};
+  const Lbl=({t})=><div style={{fontSize:12,color:"#777",marginTop:14,marginBottom:2}}>{t}</div>;
+  const SBtn=({label,active,onClick})=><button onClick={onClick} style={{flex:1,padding:"10px 6px",borderRadius:8,fontSize:12,border:`2px solid ${active?RED:BORDER}`,background:active?"#FDF0EE":"#fff",color:active?RED:DARK,fontWeight:active?500:400,cursor:"pointer",lineHeight:1.4,textAlign:"center"}}>{label}</button>;
+  const Row=({label,val})=><div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}><span style={{fontSize:12,color:"#888"}}>{label}</span><span style={{fontSize:13,maxWidth:"60%",textAlign:"right"}}>{val}</span></div>;
+
+  const TopBar=({gear})=>(
+    <div style={{background:RED,padding:"16px 20px 12px",textAlign:"center",position:"relative"}}>
+      <div style={{fontSize:20,fontWeight:500,color:"#fff",letterSpacing:2}}>🏮 江味齋 JiangWay</div>
+      <div style={{fontSize:11,color:"rgba(255,255,255,0.85)",marginTop:2}}>32 Wessel Rd, Edenburg, Rivonia</div>
+      {gear&&<button onClick={()=>setMode("pinentry")} style={{position:"absolute",top:14,right:14,background:"rgba(255,255,255,0.2)",border:"none",borderRadius:6,padding:"6px 10px",color:"#fff",fontSize:11,cursor:"pointer"}}>⚙️</button>}
+    </div>
+  );
+
+  if(mode==="pinentry") return(
+    <div style={{background:"#FDF6EC",minHeight:"100vh"}}>
+      <TopBar/>
+      <div style={{padding:"40px 24px",maxWidth:360,margin:"0 auto",textAlign:"center"}}>
+        <div style={{fontSize:16,fontWeight:500,marginBottom:8}}>店主登入 Staff Login</div>
+        <div style={{fontSize:13,color:"#888",marginBottom:20}}>請輸入5位數密碼 Enter 5-digit PIN</div>
+        <input type="password" inputMode="numeric" maxLength={5} defaultValue="" onChange={e=>{pinRef.current=e.target.value;setPinErr(false);}} placeholder="● ● ● ● ●" style={{...IS,textAlign:"center",fontSize:24,letterSpacing:8}}/>
+        {pinErr&&<div style={{color:RED,fontSize:13,marginTop:8}}>密碼錯誤 Wrong PIN</div>}
+        <button onClick={tryPin} style={{width:"100%",background:RED,color:"#fff",border:"none",borderRadius:8,padding:"13px",fontSize:14,fontWeight:500,cursor:"pointer",marginTop:16}}>確認 Confirm</button>
+        <button onClick={()=>setMode("customer")} style={{width:"100%",background:"#fff",color:"#888",border:`1.5px solid ${BORDER}`,borderRadius:8,padding:"12px",fontSize:13,cursor:"pointer",marginTop:10}}>取消 Cancel</button>
+      </div>
+    </div>
+  );
+
+  if(mode==="admin") return(
+    <div style={{background:"#F4F6F8",minHeight:"100vh"}}>
+      <div style={{background:NAVY,padding:"14px 20px 0",textAlign:"center"}}>
+        <div style={{fontSize:17,fontWeight:500,color:"#fff",paddingBottom:12}}>⚙️ 店主管理 Staff Mode</div>
+        <div style={{display:"flex",borderTop:"1px solid rgba(255,255,255,0.2)"}}>
+          {[["stock","庫存"],["promo","促銷"],["settings","設定"],["orders","訂單"],["analytics","分析"]].map(([k,l])=>(
+            <button key={k} onClick={()=>setAdminTab(k)} style={{flex:1,padding:"10px 4px",border:"none",background:"transparent",color:adminTab===k?"#fff":"rgba(255,255,255,0.55)",fontWeight:adminTab===k?500:400,fontSize:13,cursor:"pointer",borderBottom:adminTab===k?"3px solid #fff":"3px solid transparent"}}>{l}</button>
+          ))}
+        </div>
+      </div>
+      <div style={{padding:"16px",maxWidth:480,margin:"0 auto"}}>
+        {adminTab==="stock"&&<>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+            <div style={{fontSize:13,color:"#555"}}>售完：<span style={{color:RED,fontWeight:500}}>{Object.values(soldOut).filter(Boolean).length} 項</span></div>
+            <button onClick={()=>setSoldOut({})} style={{padding:"7px 14px",borderRadius:8,border:`1.5px solid ${BORDER}`,background:"#fff",color:DARK,fontSize:12,cursor:"pointer"}}>全部恢復 Reset All</button>
+          </div>
+          {MENU.map(cat=>(
+            <div key={cat.cat} style={{marginBottom:18}}>
+              <div style={{fontSize:12,fontWeight:500,color:NAVY,marginBottom:8,borderBottom:`1px solid ${BORDER}`,paddingBottom:4}}>{cat.cat}</div>
+              {cat.items.map(item=>{const out=soldOut[item.id];return(
+                <div key={item.id} onClick={()=>setSoldOut(s=>({...s,[item.id]:!s[item.id]}))} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"11px 14px",marginBottom:6,borderRadius:10,cursor:"pointer",background:out?"#FFF0F0":"#fff",border:`1.5px solid ${out?RED:BORDER}`}}>
+                  <div><div style={{fontSize:14,color:out?"#aaa":DARK,textDecoration:out?"line-through":"none"}}>{item.name}</div><div style={{fontSize:11,color:"#aaa"}}>{item.nameEn} · R{item.price}</div></div>
+                  <div style={{padding:"4px 12px",borderRadius:20,fontSize:12,fontWeight:500,background:out?RED:"#E8F5E9",color:out?"#fff":"#27AE60"}}>{out?"售完":"有貨"}</div>
+                </div>
+              );})}
+            </div>
+          ))}
+        </>}
+        {adminTab==="promo"&&<>
+          {promos.length>0&&promos.map(p=>(
+            <div key={p.id} style={{background:"#fff",border:`1.5px solid ${p.active?RED:BORDER}`,borderRadius:10,padding:"12px 14px",marginBottom:8,display:"flex",alignItems:"center",gap:8}}>
+              <div style={{flex:1}}><div style={{fontSize:14,color:p.active?DARK:"#aaa"}}>{p.label}</div><div style={{fontSize:12,color:"#888",marginTop:2}}>{p.type==="order_discount"?`整單 ${p.pct}% OFF`:p.type==="item_discount"?`品項折扣 ${p.pct}%`:p.type==="addon"?`加價購 R${p.addonPrice} — ${p.addonName}`:""}</div></div>
+              <button onClick={()=>setPromos(ps=>ps.map(x=>x.id===p.id?{...x,active:!x.active}:x))} style={{padding:"5px 10px",borderRadius:8,border:`1.5px solid ${p.active?RED:BORDER}`,background:p.active?"#FFF0F0":"#fff",color:p.active?RED:"#aaa",fontSize:12,cursor:"pointer"}}>{p.active?"關閉":"開啟"}</button>
+              <button onClick={()=>setPromos(ps=>ps.filter(x=>x.id!==p.id))} style={{padding:"5px 10px",borderRadius:8,border:"none",background:"#fee",color:RED,fontSize:12,cursor:"pointer"}}>刪除</button>
+            </div>
+          ))}
+          <div style={{background:"#fff",border:`1.5px solid ${BORDER}`,borderRadius:12,padding:"16px",marginTop:12}}>
+            <div style={{fontSize:13,fontWeight:500,color:NAVY,marginBottom:10}}>新增促銷 Add Promo</div>
+            <Lbl t="類型 Type"/>
+            <select value={pForm.type} onChange={e=>setPForm(f=>({...f,type:e.target.value}))} style={{...IS,fontSize:14}}>
+              <option value="order_discount">整單折扣</option>
+              <option value="item_discount">品項折扣</option>
+              <option value="addon">加價購</option>
+            </select>
+            <Lbl t="名稱 Label"/><input value={pForm.label} onChange={e=>setPForm(f=>({...f,label:e.target.value}))} placeholder="例：母親節特惠" style={{...IS,fontSize:14}}/>
+            {pForm.type!=="addon"&&<><Lbl t="折扣 %"/><input type="number" value={pForm.pct} onChange={e=>setPForm(f=>({...f,pct:e.target.value}))} placeholder="例：10" style={{...IS,fontSize:14}}/></>}
+            {pForm.type==="item_discount"&&<><Lbl t="選擇品項"/><select value={pForm.itemId} onChange={e=>setPForm(f=>({...f,itemId:e.target.value}))} style={{...IS,fontSize:14}}><option value="">請選擇...</option>{ALL.map(i=><option key={i.id} value={i.id}>{i.name} — R{i.price}</option>)}</select></>}
+            {pForm.type==="addon"&&<><Lbl t="品項名稱"/><input value={pForm.addonName} onChange={e=>setPForm(f=>({...f,addonName:e.target.value}))} placeholder="例：特製醬料包" style={{...IS,fontSize:14}}/><Lbl t="加價金額 (R)"/><input type="number" value={pForm.addonPrice} onChange={e=>setPForm(f=>({...f,addonPrice:e.target.value}))} placeholder="例：15" style={{...IS,fontSize:14}}/></>}
+            <button onClick={addPromo} style={{width:"100%",background:RED,color:"#fff",border:"none",borderRadius:8,padding:"12px",fontSize:14,fontWeight:500,cursor:"pointer",marginTop:16}}>＋ 新增</button>
+          </div>
+        </>}
+        {adminTab==="settings"&&<div style={{background:"#fff",border:`1.5px solid ${BORDER}`,borderRadius:12,padding:"16px"}}>
+          <Lbl t="最低消費 (R) — 0=不設限"/><input type="number" defaultValue={minOrder} onChange={e=>{minRef.current=e.target.value;}} style={{...IS,fontSize:14}}/>
+          <Lbl t="外送費 (R) — 0=免費"/><input type="number" defaultValue={delivFee} onChange={e=>{feeRef.current=e.target.value;}} style={{...IS,fontSize:14}}/>
+          <button onClick={()=>{setMinOrder(parseFloat(minRef.current)||0);setDelivFee(parseFloat(feeRef.current)||0);alert("已儲存！");}} style={{width:"100%",background:NAVY,color:"#fff",border:"none",borderRadius:8,padding:"12px",fontSize:14,cursor:"pointer",marginTop:14}}>儲存 Save</button>
+        </div>}
+        {adminTab==="orders"&&<>
+          {orders.length===0&&<div style={{textAlign:"center",color:"#aaa",padding:"40px 0"}}>尚無訂單記錄</div>}
+          {orders.map(o=>(
+            <div key={o.no} style={{background:"#fff",border:`1.5px solid ${BORDER}`,borderRadius:10,padding:"12px",marginBottom:10}}>
+              <div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:13,fontWeight:500,color:NAVY}}>#{o.no} · {o.name}</span><span style={{color:RED,fontWeight:500}}>R{o.total}</span></div>
+              <div style={{fontSize:12,color:"#888",margin:"4px 0"}}>{o.ts} · {o.pickup} · {o.pay}</div>
+              {o.items.map((i,idx)=><div key={idx} style={{fontSize:12,color:"#555"}}>{i.name} × {i.qty}</div>)}
+              {o.note&&<div style={{fontSize:11,color:"#aaa",marginTop:4}}>備註：{o.note}</div>}
+            </div>
+          ))}
+          <button onClick={()=>{if(confirm("確定清除所有訂單記錄？")){localStorage.removeItem("jw_orders");localStorage.removeItem("jw_no");setOrders([]);}}} style={{width:"100%",padding:"10px",borderRadius:8,border:`1.5px solid ${BORDER}`,background:"#fff",color:"#aaa",fontSize:12,cursor:"pointer",marginTop:8}}>清除記錄</button>
+        </>}
+        {adminTab==="analytics"&&(()=>{
+          const filtered=orders.filter(o=>{
+            if(aDate&&!o.ts.startsWith(aDate))return false;
+            return true;
+          });
+          const totalRev=filtered.reduce((s,o)=>s+o.total,0);
+          const totalOrders=filtered.length;
+          const avgOrder=totalOrders>0?Math.round(totalRev/totalOrders):0;
+          const itemMap={};
+          filtered.forEach(o=>o.items.forEach(i=>{
+            if(!itemMap[i.name])itemMap[i.name]={name:i.name,qty:0,rev:0};
+            itemMap[i.name].qty+=i.qty;
+            itemMap[i.name].rev+=i.price*i.qty;
+          }));
+          const itemList=Object.values(itemMap).sort((a,b)=>aSort==="qty"?b.qty-a.qty:b.rev-a.rev);
+          const custMap={};
+          filtered.forEach(o=>{
+            const k=o.name||"未知";
+            if(!custMap[k])custMap[k]={name:k,orders:0,total:0};
+            custMap[k].orders+=1;custMap[k].total+=o.total;
+          });
+          const custList=Object.values(custMap).sort((a,b)=>b.total-a.total);
+          const dayMap={};
+          filtered.forEach(o=>{
+            const d=o.ts?o.ts.split(" ")[0]:"未知";
+            if(!dayMap[d])dayMap[d]={date:d,orders:0,total:0};
+            dayMap[d].orders+=1;dayMap[d].total+=o.total;
+          });
+          const dayList=Object.values(dayMap).sort((a,b)=>b.date.localeCompare(a.date));
+          const Card=({label,val})=>(
+            <div style={{flex:1,background:"#fff",borderRadius:10,padding:"14px 10px",border:`1px solid ${BORDER}`,textAlign:"center"}}>
+              <div style={{fontSize:11,color:"#888",marginBottom:4}}>{label}</div>
+              <div style={{fontSize:20,fontWeight:500,color:NAVY}}>{val}</div>
+            </div>
+          );
+          return(
+            <div>
+              <div style={{fontSize:14,fontWeight:500,color:NAVY,marginBottom:12}}>銷售分析 Sales Analytics</div>
+              <div style={{display:"flex",gap:8,marginBottom:14,alignItems:"center"}}>
+                <div style={{fontSize:12,color:"#777",flexShrink:0}}>篩選日期</div>
+                <input type="date" value={aDate} onChange={e=>setADate(e.target.value)} style={{flex:1,padding:"8px 10px",borderRadius:8,border:`1.5px solid ${BORDER}`,fontSize:13,background:"#fff",color:DARK}}/>
+                {aDate&&<button onClick={()=>setADate("")} style={{padding:"8px 12px",borderRadius:8,border:`1.5px solid ${BORDER}`,background:"#fff",color:"#888",fontSize:12,cursor:"pointer"}}>清除</button>}
+              </div>
+              <div style={{display:"flex",gap:8,marginBottom:14}}>
+                <Card label="總營業額" val={`R${totalRev}`}/>
+                <Card label="訂單數" val={totalOrders}/>
+                <Card label="平均客單" val={`R${avgOrder}`}/>
+              </div>
+              <div style={{display:"flex",gap:6,marginBottom:12}}>
+                {[["item","品項"],["customer","客戶"],["day","每日"]].map(([k,l])=>(
+                  <button key={k} onClick={()=>setAFilter(k)} style={{flex:1,padding:"8px 4px",borderRadius:8,border:`1.5px solid ${aFilter===k?NAVY:BORDER}`,background:aFilter===k?NAVY:"#fff",color:aFilter===k?"#fff":DARK,fontSize:12,cursor:"pointer"}}>{l}</button>
+                ))}
+              </div>
+              {aFilter==="item"&&<div style={{marginBottom:16}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                  <div style={{fontSize:13,fontWeight:500,color:NAVY}}>熱銷品項</div>
+                  <div style={{display:"flex",gap:4}}>
+                    <button onClick={()=>setASort("rev")} style={{padding:"4px 10px",borderRadius:6,border:`1.5px solid ${aSort==="rev"?RED:BORDER}`,background:aSort==="rev"?"#FDF0EE":"#fff",color:aSort==="rev"?RED:"#888",fontSize:11,cursor:"pointer"}}>金額</button>
+                    <button onClick={()=>setASort("qty")} style={{padding:"4px 10px",borderRadius:6,border:`1.5px solid ${aSort==="qty"?RED:BORDER}`,background:aSort==="qty"?"#FDF0EE":"#fff",color:aSort==="qty"?RED:"#888",fontSize:11,cursor:"pointer"}}>數量</button>
+                  </div>
+                </div>
+                {itemList.length===0&&<div style={{textAlign:"center",color:"#aaa",fontSize:13,padding:"20px 0"}}>暫無資料</div>}
+                {itemList.map((item,idx)=>{
+                  const maxRev=itemList[0]?.rev||1;
+                  const pct=Math.round((item.rev/maxRev)*100);
+                  return(
+                    <div key={item.name} style={{background:"#fff",borderRadius:8,padding:"10px 12px",marginBottom:6,border:`1px solid ${BORDER}`}}>
+                      <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                        <div style={{display:"flex",alignItems:"center",gap:6}}>
+                          <span style={{fontSize:11,background:idx===0?"#FFF3CD":idx===1?"#F0F0F0":"#FDF6EC",color:idx===0?"#7A5800":idx===1?"#555":"#aaa",borderRadius:4,padding:"1px 6px",fontWeight:500}}>#{idx+1}</span>
+                          <span style={{fontSize:13,fontWeight:500,color:DARK}}>{item.name}</span>
+                        </div>
+                        <div style={{textAlign:"right"}}>
+                          <div style={{fontSize:13,fontWeight:500,color:RED}}>R{item.rev}</div>
+                          <div style={{fontSize:11,color:"#888"}}>{item.qty} 份</div>
+                        </div>
+                      </div>
+                      <div style={{height:4,background:"#F0F0F0",borderRadius:2}}>
+                        <div style={{height:4,background:RED,borderRadius:2,width:`${pct}%`}}/>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>}
+              {aFilter==="customer"&&<div style={{marginBottom:16}}>
+                <div style={{fontSize:13,fontWeight:500,color:NAVY,marginBottom:8}}>客戶分析</div>
+                {custList.length===0&&<div style={{textAlign:"center",color:"#aaa",fontSize:13,padding:"20px 0"}}>暫無資料</div>}
+                {custList.map(c=>(
+                  <div key={c.name} style={{background:"#fff",borderRadius:8,padding:"10px 12px",marginBottom:6,border:`1px solid ${BORDER}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <div>
+                      <div style={{fontSize:13,fontWeight:500,color:DARK}}>{c.name}</div>
+                      <div style={{fontSize:11,color:"#888",marginTop:2}}>{c.orders} 次訂購 · 平均 R{Math.round(c.total/c.orders)}</div>
+                    </div>
+                    <div style={{fontSize:14,fontWeight:500,color:RED}}>R{c.total}</div>
+                  </div>
+                ))}
+              </div>}
+              {aFilter==="day"&&<div style={{marginBottom:16}}>
+                <div style={{fontSize:13,fontWeight:500,color:NAVY,marginBottom:8}}>每日銷售</div>
+                {dayList.length===0&&<div style={{textAlign:"center",color:"#aaa",fontSize:13,padding:"20px 0"}}>暫無資料</div>}
+                {dayList.map(d=>(
+                  <div key={d.date} style={{background:"#fff",borderRadius:8,padding:"10px 12px",marginBottom:6,border:`1px solid ${BORDER}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <div>
+                      <div style={{fontSize:13,fontWeight:500,color:DARK}}>{d.date}</div>
+                      <div style={{fontSize:11,color:"#888",marginTop:2}}>{d.orders} 筆訂單</div>
+                    </div>
+                    <div style={{fontSize:14,fontWeight:500,color:RED}}>R{d.total}</div>
+                  </div>
+                ))}
+              </div>}
+            </div>
+          );
+        })()}
+
+        <button onClick={()=>setMode("customer")} style={{width:"100%",background:NAVY,color:"#fff",border:"none",borderRadius:8,padding:"13px",fontSize:14,fontWeight:500,cursor:"pointer",marginTop:16}}>完成，回到點餐 Done</button>
+      </div>
+    </div>
+  );
+
+  return(
+    <div style={{background:"#FDF6EC",minHeight:"100vh"}}>
+      <TopBar gear/>
+      <div style={{background:RED,paddingBottom:12,display:"flex",justifyContent:"center",gap:6}}>
+        {[1,2,3,4].map(s=><div key={s} style={{width:s===step?24:8,height:8,borderRadius:4,background:s<=step?"#fff":"rgba(255,255,255,0.35)",transition:"width 0.3s"}}/>)}
+      </div>
+      {activePromos.length>0&&(
+        <div style={{background:"#FFF3CD",borderBottom:"2px solid #F0C040",padding:"10px 16px"}}>
+          {activePromos.map(p=><div key={p.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:2}}><span>🎉</span><span style={{fontSize:13,fontWeight:500,color:"#7A5800"}}>{p.label}</span><span style={{fontSize:12,color:"#A07000"}}>{p.type==="order_discount"?`整單 ${p.pct}% OFF`:p.type==="item_discount"?`${ALL.find(i=>i.id===p.itemId)?.name} ${p.pct}% OFF`:`加 R${p.addonPrice} 多一份${p.addonName}`}</span></div>)}
+        </div>
+      )}
+      <div style={{padding:"20px 16px",maxWidth:480,margin:"0 auto"}}>
+
+        {step===1&&<div>
+          <div style={{fontSize:16,fontWeight:500,marginBottom:16}}>顧客資料 Customer Info</div>
+          <Lbl t="姓名 Name"/><input type="text" defaultValue={nRef.current} onChange={e=>{nRef.current=e.target.value;}} placeholder="請輸入姓名 Enter name" style={IS}/>
+          <Lbl t="電話 Contact No.（選填 Optional）"/><input type="tel" defaultValue={phRef.current} onChange={e=>{phRef.current=e.target.value;}} placeholder="+27 82 000 0000" style={IS}/>
+          <button onClick={go2} style={{width:"100%",background:RED,color:"#fff",border:"none",borderRadius:8,padding:"13px",fontSize:14,fontWeight:500,cursor:"pointer",marginTop:20}}>下一步 Next →</button>
+        </div>}
+
+        {step===2&&<div>
+          <div style={{fontSize:16,fontWeight:500,marginBottom:16}}>選擇餐點 Select Items</div>
+          {MENU.map(cat=>(
+            <div key={cat.cat} style={{marginBottom:20}}>
+              <div style={{fontSize:12,fontWeight:500,color:RED,marginBottom:8,borderBottom:`1px solid ${BORDER}`,paddingBottom:4}}>{cat.cat}</div>
+              {cat.items.map(item=>{
+                const out=soldOut[item.id];
+                const ip=promos.find(p=>p.active&&p.type==="item_discount"&&p.itemId===item.id);
+                const dp=ip?Math.round(item.price*(1-ip.pct/100)):null;
+                return(
+                  <div key={item.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 0",borderBottom:`0.5px solid ${BORDER}`,opacity:out?0.45:1}}>
+                    <div style={{flex:1,paddingRight:8}}>
+                      <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                        <span style={{fontSize:14,fontWeight:qty(item.id)?500:400,textDecoration:out?"line-through":"none",color:out?"#aaa":DARK}}>{item.name}</span>
+                        {out&&<span style={{fontSize:10,background:"#fee",color:RED,borderRadius:4,padding:"1px 6px",fontWeight:500}}>售完 Sold Out</span>}
+                        {ip&&!out&&<span style={{fontSize:10,background:"#FFF3CD",color:"#7A5800",borderRadius:4,padding:"1px 6px",fontWeight:500}}>-{ip.pct}% OFF</span>}
+                      </div>
+                      <div style={{fontSize:11,color:"#888"}}>{item.nameEn} · {dp?<span><span style={{textDecoration:"line-through",color:"#bbb"}}>R{item.price}</span> <span style={{color:RED,fontWeight:500}}>R{dp}</span></span>:<span>R{item.price}</span>}</div>
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+                      {!out&&qty(item.id)>0&&<><button onClick={()=>adj(item.id,-1)} style={{width:32,height:32,borderRadius:16,border:`1.5px solid ${RED}`,background:"#fff",color:RED,fontSize:20,cursor:"pointer",lineHeight:1}}>−</button><span style={{fontSize:15,fontWeight:500,minWidth:20,textAlign:"center"}}>{qty(item.id)}</span></>}
+                      {!out&&<button onClick={()=>adj(item.id,1)} style={{width:32,height:32,borderRadius:16,border:`1.5px solid ${RED}`,background:qty(item.id)?RED:"#fff",color:qty(item.id)?"#fff":RED,fontSize:20,cursor:"pointer",lineHeight:1}}>+</button>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+          {addonList.length>0&&cartItems.length>0&&<div style={{background:"#FFF3CD",border:"1.5px solid #F0C040",borderRadius:10,padding:"12px 14px",marginBottom:12}}>
+            <div style={{fontSize:13,fontWeight:500,color:"#7A5800",marginBottom:8}}>🎉 加價購 Add-on</div>
+            {addonList.map(p=>(
+              <div key={p.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+                <div><span style={{fontSize:13,color:DARK}}>{p.addonName}</span><span style={{fontSize:12,color:"#A07000",marginLeft:6}}>+R{p.addonPrice}</span></div>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  {(addonQty[p.id]||0)>0&&<><button onClick={()=>adjA(p.id,-1)} style={{width:28,height:28,borderRadius:14,border:"1.5px solid #F0C040",background:"#fff",color:"#7A5800",fontSize:18,cursor:"pointer",lineHeight:1}}>−</button><span style={{fontSize:14,fontWeight:500,minWidth:16,textAlign:"center"}}>{addonQty[p.id]}</span></>}
+                  <button onClick={()=>adjA(p.id,1)} style={{width:28,height:28,borderRadius:14,border:"1.5px solid #F0C040",background:(addonQty[p.id]||0)>0?"#F0C040":"#fff",color:(addonQty[p.id]||0)>0?"#fff":"#7A5800",fontSize:18,cursor:"pointer",lineHeight:1}}>+</button>
+                </div>
+              </div>
+            ))}
+          </div>}
+          {cartItems.length>0&&<div style={{background:"#fff",border:`1.5px solid ${RED}`,borderRadius:10,padding:"12px 14px",marginBottom:12}}>
+            <div style={{fontSize:13,color:RED,fontWeight:500,marginBottom:4}}>已選 {cartItems.length} 項 · 小計 R{sub}{disc>0?` → 折後 R${total}`:""}</div>
+            {belowMin&&<div style={{fontSize:12,color:"#E67E22",marginTop:4}}>⚠️ 最低消費 R{minOrder}，還差 R{minOrder-sub}</div>}
+          </div>}
+          <div style={{display:"flex",gap:10}}>
+            <button onClick={()=>setStep(1)} style={{padding:"12px 18px",borderRadius:8,border:`1.5px solid ${BORDER}`,background:"#fff",color:DARK,fontSize:13,cursor:"pointer"}}>← 返回 Back</button>
+            <button onClick={()=>setStep(3)} disabled={cartItems.length===0||belowMin} style={{background:(cartItems.length===0||belowMin)?"#ccc":RED,color:"#fff",border:"none",borderRadius:8,padding:"12px 24px",fontSize:14,fontWeight:500,cursor:(cartItems.length===0||belowMin)?"not-allowed":"pointer",marginTop:8}}>下一步 Next →</button>
+          </div>
+        </div>}
+
+        {step===3&&<div>
+          <div style={{fontSize:16,fontWeight:500,marginBottom:16}}>取餐與付款 Pickup & Payment</div>
+          <Lbl t="取餐方式 Pickup Method"/>
+          <div style={{display:"flex",gap:8,marginTop:6}}>
+            <SBtn label="外帶 Takeaway" active={pickup==="外帶"} onClick={()=>setPickup("外帶")}/>
+            <SBtn label="外送 Delivery" active={pickup==="外送"} onClick={()=>setPickup("外送")}/>
+            <SBtn label="內用 Dine-in" active={pickup==="內用"} onClick={()=>setPickup("內用")}/>
+          </div>
+          {pickup==="外送"&&<>
+            <div style={{background:"#FFF8F0",border:`1px solid ${BORDER}`,borderRadius:8,padding:"10px 12px",marginTop:10,fontSize:12,color:"#7A4A00",lineHeight:1.7}}>
+              🛵 免費外送 Free Delivery：訂滿10個便當且距離5KM內<br/>
+              <span style={{color:"#999"}}>Free delivery for 10+ bentos within 5km radius</span>
+              {bentoCnt>0&&bentoCnt<10&&<><br/><span style={{color:RED}}>目前便當：{bentoCnt} 個（還差 {10-bentoCnt} 個）</span></>}
+              {bentoCnt>=10&&<><br/><span style={{color:"#27AE60"}}>✓ 符合免費外送！Eligible for free delivery!</span></>}
+              {delivFee>0&&bentoCnt<10&&<><br/><span style={{color:"#555"}}>外送費 Delivery fee：R{delivFee}</span></>}
+            </div>
+            <Lbl t="外送地址 Delivery Address"/><input type="text" defaultValue={adRef.current} onChange={e=>{adRef.current=e.target.value;}} placeholder="請輸入地址 Enter address" style={IS}/>
+          </>}
+          <Lbl t={pickup==="內用"?"預計用餐日期 Dining Date":"預計取餐日期 Pickup Date"}/>
+          <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:4,marginTop:6}}>
+            {dates.map(d=>{const active=selDate&&fmtKey(d)===fmtKey(selDate);return(
+              <button key={fmtKey(d)} onClick={()=>{setSelDate(d);setTime("");}} style={{flexShrink:0,padding:"8px 12px",borderRadius:8,border:`2px solid ${active?RED:BORDER}`,background:active?"#FDF0EE":"#fff",color:active?RED:DARK,fontSize:11,cursor:"pointer",lineHeight:1.4}}>{isToday(d)?"今天 Today":fmtDate(d)}</button>
+            );})}
+          </div>
+          {selDate&&<><Lbl t={pickup==="內用"?"預計用餐時間 Dining Time":"預計取餐時間 Pickup Time"}/><select value={time} onChange={e=>setTime(e.target.value)} style={{...IS,color:time?DARK:"#999",fontSize:14}}><option value="">請選擇時間 Select time</option>{slots.map(t=><option key={t} value={t}>{t}</option>)}</select></>}
+          <Lbl t="付款方式 Payment Method"/>
+          <div style={{display:"flex",gap:8,marginTop:6}}>
+            <SBtn label="現金 Cash" active={pay==="現金"} onClick={()=>setPay("現金")}/>
+            <SBtn label="EFT" active={pay==="EFT"} onClick={()=>setPay("EFT")}/>
+            <SBtn label="餐券 Voucher" active={pay==="餐券"} onClick={()=>setPay("餐券")}/>
+          </div>
+          {pay==="EFT"&&<div style={{background:"#F0F7FF",border:"1.5px solid #B5D4F4",borderRadius:10,padding:"12px 14px",marginTop:10}}>
+            <div style={{fontSize:13,fontWeight:500,color:"#0C447C",marginBottom:8}}>🏦 EFT Banking Details</div>
+            {[["Bank","Capitec Bank"],["Acc Name","Intelage Trading cc"],["Acc No","1055134590"],["Branch Code","450105"]].map(([k,v])=>(
+              <div key={k} style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{fontSize:12,color:"#555"}}>{k}</span><span style={{fontSize:13,fontWeight:500,color:"#0C447C"}}>{v}</span></div>
+            ))}
+            <div style={{fontSize:11,color:"#888",marginTop:8,borderTop:"1px solid #B5D4F4",paddingTop:8}}>請以姓名作為付款參考 Use your name as reference</div>
+          </div>}
+          <Lbl t="備註 Remarks（選填 Optional）"/><textarea defaultValue={noRef.current} onChange={e=>{noRef.current=e.target.value;}} placeholder="例：不要辣、少油... e.g. No spicy" style={{...IS,minHeight:68,resize:"vertical"}}/>
+          <div style={{display:"flex",gap:10,marginTop:16}}>
+            <button onClick={()=>setStep(2)} style={{padding:"12px 18px",borderRadius:8,border:`1.5px solid ${BORDER}`,background:"#fff",color:DARK,fontSize:13,cursor:"pointer"}}>← 返回 Back</button>
+            <button onClick={go4} style={{background:RED,color:"#fff",border:"none",borderRadius:8,padding:"12px 24px",fontSize:14,fontWeight:500,cursor:"pointer",marginTop:8}}>確認訂單 Confirm →</button>
+          </div>
+        </div>}
+
+        {step===4&&<div>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
+            <div style={{fontSize:16,fontWeight:500}}>訂單確認 Order Summary</div>
+            <div style={{background:RED,color:"#fff",borderRadius:6,padding:"3px 10px",fontSize:13,fontWeight:500}}>#{ordNo}</div>
+          </div>
+          <div style={{background:"#fff",border:`1.5px solid ${BORDER}`,borderRadius:12,padding:"16px 14px",marginBottom:16}}>
+            <Row label="顧客 Customer" val={`${nameVal}${phoneVal?` · ${phoneVal}`:""}`}/>
+            <Row label="取餐 Pickup" val={`${pickLbl()}${pickup==="外送"&&addr?`：${addr}`:""}`}/>
+            {selDate&&<Row label="日期 Date" val={isToday(selDate)?"今天 Today":fmtDate(selDate)}/>}
+            {time&&<Row label="時間 Time" val={time}/>}
+            <Row label="付款 Payment" val={payLbl()}/>
+            <div style={{borderTop:`1px solid ${BORDER}`,paddingTop:12,marginTop:4}}>
+              {cartItems.map(i=>(
+                <div key={i.id} style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                  <span style={{fontSize:13}}>{i.name} <span style={{color:"#999",fontSize:11}}>{i.nameEn}</span> × {qty(i.id)}</span>
+                  <span style={{fontSize:13}}>R{i.price*qty(i.id)}</span>
+                </div>
+              ))}
+              {addonList.filter(p=>(addonQty[p.id]||0)>0).map(p=>(
+                <div key={p.id} style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                  <span style={{fontSize:13,color:"#7A5800"}}>＋{p.addonName} × {addonQty[p.id]}</span>
+                  <span style={{fontSize:13,color:"#7A5800"}}>+R{p.addonPrice*addonQty[p.id]}</span>
+                </div>
+              ))}
+              {discLines.map((l,i)=><div key={i} style={{fontSize:12,color:"#27AE60",marginBottom:4}}>{l}</div>)}
+              {fee>0&&<div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:12,color:"#888"}}>外送費</span><span style={{fontSize:13}}>+R{fee}</span></div>}
+              <div style={{borderTop:`1px solid ${BORDER}`,marginTop:8,paddingTop:8}}>
+                {disc>0&&<div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:13,color:"#888"}}>小計</span><span style={{fontSize:13,color:"#888",textDecoration:"line-through"}}>R{sub}</span></div>}
+                <div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:15,fontWeight:500}}>合計 Total</span><span style={{fontSize:16,fontWeight:500,color:RED}}>R{total}</span></div>
+              </div>
+            </div>
+            {note&&<div style={{marginTop:10,fontSize:12,color:"#666",borderTop:`1px solid ${BORDER}`,paddingTop:8}}>備註：{note}</div>}
+          </div>
+          <div style={{background:"#F5F5F5",borderRadius:10,padding:"12px 14px",marginBottom:14,fontFamily:"monospace",fontSize:12,whiteSpace:"pre-wrap",color:DARK,lineHeight:1.7}}>{orderTxt()}</div>
+          <button onClick={sendWA} style={{width:"100%",padding:"13px",borderRadius:8,border:"none",background:"#25D366",color:"#fff",fontSize:14,fontWeight:500,cursor:"pointer",marginBottom:10}}>📲 傳送到 WhatsApp Send via WhatsApp</button>
+          <button onClick={copy} style={{width:"100%",padding:"12px",borderRadius:8,border:`2px solid ${copied?"#27AE60":RED}`,background:copied?"#27AE60":"#fff",color:copied?"#fff":RED,fontSize:13,fontWeight:500,cursor:"pointer",marginBottom:10}}>{copied?"✓ 已複製！Copied!":"複製訂單文字 Copy Text"}</button>
+          <button onClick={reset} style={{width:"100%",padding:"12px",borderRadius:8,border:`1.5px solid ${BORDER}`,background:"#fff",color:"#888",fontSize:13,cursor:"pointer"}}>+ 新增訂單 New Order</button>
+        </div>}
+      </div>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+</script>
+</body>
+</html>
