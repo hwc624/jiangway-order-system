@@ -78,7 +78,19 @@ const RED="#C0392B",DARK="#2C1A0E",BORDER="#E8D5B7",NAVY="#2C3E50";
 const WA="27791325590",PIN="90888",WAGROUP="FoKtpmRCv4rKgYpGOph73x";
 
 function getNo(){const n=parseInt(localStorage.getItem("jw_no")||"0")+1;localStorage.setItem("jw_no",n);return String(n).padStart(4,"0");}
-function saveOrd(o){const l=JSON.parse(localStorage.getItem("jw_orders")||"[]");l.unshift(o);localStorage.setItem("jw_orders",JSON.stringify(l.slice(0,100)));}
+function saveOrd(o){
+  const l=JSON.parse(localStorage.getItem("jw_orders")||"[]");
+  l.unshift(o);
+  localStorage.setItem("jw_orders",JSON.stringify(l.slice(0,100)));
+  
+  // 同時上傳到 Firebase
+  if(window.fbDb){
+    const ordKey=`order_${o.no}_${Date.now()}`;
+    window.fbDb.ref(`orders/${ordKey}`).set(o).catch(err=>{
+      console.error("❌ Firebase 存訂單失敗:", err.message);
+    });
+  }
+}
 function loadOrds(){return JSON.parse(localStorage.getItem("jw_orders")||"[]");}
 function loadSoldOut(){return JSON.parse(localStorage.getItem("jw_soldOut")||"{}");}
 function saveSoldOut(so){localStorage.setItem("jw_soldOut",JSON.stringify(so));}
@@ -378,6 +390,42 @@ function App(){
     });
     
     return ()=>dbRef.off("value",unsubscribe);
+  },[]);
+
+  // Firebase 即時同步訂單（店主後台）
+  useEffect(()=>{
+    if(!window.fbDb){
+      return;
+    }
+    
+    const ordersRef=window.fbDb.ref("orders");
+    const unsubscribe=ordersRef.on("value",snapshot=>{
+      const fbOrders={};
+      snapshot.forEach(childSnap=>{
+        fbOrders[childSnap.key]=childSnap.val();
+      });
+      
+      // 合併 Firebase 訂單 + 本地訂單
+      const localOrders=loadOrds();
+      const fbOrdersList=Object.values(fbOrders).sort((a,b)=>new Date(b.ts)-new Date(a.ts));
+      const allOrders=[...fbOrdersList,...localOrders];
+      
+      // 去重（防止重複）
+      const seen=new Set();
+      const uniqueOrders=allOrders.filter(o=>{
+        const key=o.no+o.ts;
+        if(seen.has(key))return false;
+        seen.add(key);
+        return true;
+      });
+      
+      setOrders(uniqueOrders.slice(0,100));
+      console.log("📡 從 Firebase 更新訂單，共", uniqueOrders.length, "筆");
+    },error=>{
+      console.error("❌ Firebase 訂單讀取錯誤:", error.message);
+    });
+    
+    return ()=>ordersRef.off("value",unsubscribe);
   },[]);
 
   const qty=id=>cart[id]||0;
