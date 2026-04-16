@@ -638,7 +638,7 @@ function App(){
               {o.note&&<div style={{fontSize:11,color:"#aaa",marginTop:4}}>備註：{o.note}</div>}
             </div>
           ))}
-          <button onClick={()=>{if(confirm("確定清除所有訂單記錄？")){localStorage.removeItem("jw_orders");localStorage.removeItem("jw_no");setOrders([]);}}} style={{width:"100%",padding:"10px",borderRadius:8,border:`1.5px solid ${BORDER}`,background:"#fff",color:"#aaa",fontSize:12,cursor:"pointer",marginTop:8}}>清除記錄</button>
+          <button onClick={()=>{if(confirm("確定清除所有訂單記錄？")){localStorage.removeItem("jw_orders");localStorage.removeItem("jw_no");if(window.fbDb){window.fbDb.ref("orders").remove();}setOrders([]);}}} style={{width:"100%",padding:"10px",borderRadius:8,border:`1.5px solid ${BORDER}`,background:"#fff",color:"#aaa",fontSize:12,cursor:"pointer",marginTop:8}}>清除記錄</button>
         </>}
         {adminTab==="analytics"&&<AnalyticsTab orders={orders} BORDER={BORDER} RED={RED} NAVY={NAVY} DARK={DARK}/>}
         {adminTab==="qrcode"&&<QRCodeShare appUrl={typeof window!=="undefined"?window.location.href:""} BORDER={BORDER} RED={RED} NAVY={NAVY} DARK={DARK}/>}
