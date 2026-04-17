@@ -496,14 +496,43 @@ function App(){
     const encoded=encodeURIComponent(txt);
     const waNum=WA; // 27791325590
     
+    // 創建訂單物件
+    const newOrder={
+      no:ordNo,
+      name:nameVal,
+      phone:phoneVal,
+      pickup,
+      addr,
+      distance,
+      selDate,
+      time,
+      items:cartItems.map(i=>({name:i.name,nameEn:i.nameEn,qty:qty(i.id),price:i.price})),
+      addons:addonList.filter(p=>(addonQty[p.id]||0)>0).map(p=>({addonName:p.addonName,qty:addonQty[p.id],addonPrice:p.addonPrice})),
+      disc,
+      fee,
+      isFreeDelivery,
+      total,
+      note,
+      pay,
+      eftProof,
+      ts:new Date().toLocaleString("zh-TW")
+    };
+    
+    // 保存到 Firebase orders（直接進訂單）
+    if(window.fbDb){
+      const ordKey=`order_${newOrder.no}_${Date.now()}`;
+      window.fbDb.ref(`orders/${ordKey}`).set(newOrder).catch(err=>{
+        console.error("❌ Firebase 存訂單失敗:", err.message);
+      });
+    }
+    
+    // 發送 WhatsApp
     if(isInWeChat()){
       copy();
       alert("📋 訂單文字已複製！\n\n因為您在 WeChat 內無法直接跳轉到 WhatsApp。\n\n請按以下步驟：\n1️⃣ 打開 WhatsApp\n2️⃣ 搜尋江味齋\n3️⃣ 長按輸入框選「貼上」");
     } else if(isIPhone()){
-      // iPhone — 發送到個人 WhatsApp
       window.location.href=`https://wa.me/${waNum}?text=${encoded}`;
     } else {
-      // Android — 先嘗試 App，再用 Web
       const appUrl=`whatsapp://send?phone=${waNum}&text=${encoded}`;
       const webUrl=`https://wa.me/${waNum}?text=${encoded}`;
       const iframe=document.createElement("iframe");
@@ -521,6 +550,9 @@ function App(){
       };
       window.addEventListener("blur",blurHandler,{once:true});
     }
+    
+    alert("✅ 訂單已提交！");
+    reset();
   };
   const copy=()=>{
     const txt=orderTxt();
