@@ -86,14 +86,7 @@ function saveOrd(o){
   const l=JSON.parse(localStorage.getItem("jw_orders")||"[]");
   l.unshift(o);
   localStorage.setItem("jw_orders",JSON.stringify(l.slice(0,100)));
-  
-  // 同時上傳到 Firebase
-  if(window.fbDb){
-    const ordKey=`order_${o.no}_${Date.now()}`;
-    window.fbDb.ref(`orders/${ordKey}`).set(o).catch(err=>{
-      console.error("❌ Firebase 存訂單失敗:", err.message);
-    });
-  }
+  // 不自動上傳到 Firebase，只在點「提交」時才上傳
 }
 function loadOrds(){return JSON.parse(localStorage.getItem("jw_orders")||"[]");}
 function loadSoldOut(){return JSON.parse(localStorage.getItem("jw_soldOut")||"{}");}
@@ -409,22 +402,11 @@ function App(){
         fbOrders[childSnap.key]=childSnap.val();
       });
       
-      // 合併 Firebase 訂單 + 本地訂單
-      const localOrders=loadOrds();
+      // 只讀 Firebase 訂單，不讀本地 localStorage
       const fbOrdersList=Object.values(fbOrders).sort((a,b)=>new Date(b.ts)-new Date(a.ts));
-      const allOrders=[...fbOrdersList,...localOrders];
       
-      // 去重（防止重複）
-      const seen=new Set();
-      const uniqueOrders=allOrders.filter(o=>{
-        const key=o.no+o.ts;
-        if(seen.has(key))return false;
-        seen.add(key);
-        return true;
-      });
-      
-      setOrders(uniqueOrders.slice(0,100));
-      console.log("📡 從 Firebase 更新訂單，共", uniqueOrders.length, "筆");
+      setOrders(fbOrdersList.slice(0,100));
+      console.log("📡 從 Firebase 更新訂單，共", fbOrdersList.length, "筆");
     },error=>{
       console.error("❌ Firebase 訂單讀取錯誤:", error.message);
     });
@@ -456,7 +438,8 @@ function App(){
     setAddr(adRef.current);setNote(noRef.current);
     const no=getNo();setOrdNo(no);
     const o={no,name:nameVal,phone:phoneVal,items:cartItems.map(i=>({name:i.name,qty:qty(i.id),price:i.price})),total,pickup,addr:adRef.current,distance:distance,pay:pay==="現金"?"現金 Cash":pay==="餐券"?"餐券 Voucher":"EFT",eftProofUrl:eftProof,date:selDate?fmtDate(selDate):"",time,note:noRef.current,ts:new Date().toLocaleString("zh-TW")};
-    saveOrd(o);setOrders(loadOrds());setStep(4);
+    // 不保存到本地或 Firebase，只生成訂單號，等提交時才保存
+    setStep(4);
   };
   const pickLbl=()=>pickup==="外帶"?"外帶 Takeaway":pickup==="外送"?"外送 Delivery":"內用 Dine-in";
   const payLbl=()=>pay==="現金"?"現金 Cash":pay==="餐券"?"餐券 Voucher":"EFT";
