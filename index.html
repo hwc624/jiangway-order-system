@@ -83,12 +83,15 @@ const WA="27791325590",PIN="90888",WAGROUP="FoKtpmRCv4rKgYpGOph73x";
 
 function getNo(){const n=parseInt(localStorage.getItem("jw_no")||"0")+1;localStorage.setItem("jw_no",n);return String(n).padStart(4,"0");}
 function saveOrd(o){
-  const l=JSON.parse(localStorage.getItem("jw_orders")||"[]");
-  l.unshift(o);
-  localStorage.setItem("jw_orders",JSON.stringify(l.slice(0,100)));
-  // 不自動上傳到 Firebase，只在點「提交」時才上傳
+  // 完全禁用本地保存
+  // const l=JSON.parse(localStorage.getItem("jw_orders")||"[]");
+  // l.unshift(o);
+  // localStorage.setItem("jw_orders",JSON.stringify(l.slice(0,100)));
 }
-function loadOrds(){return JSON.parse(localStorage.getItem("jw_orders")||"[]");}
+function loadOrds(){
+  // 不讀本地 localStorage，只讀 Firebase
+  return [];
+}
 function loadSoldOut(){return JSON.parse(localStorage.getItem("jw_soldOut")||"{}");}
 function saveSoldOut(so){localStorage.setItem("jw_soldOut",JSON.stringify(so));}
 
@@ -350,7 +353,7 @@ function App(){
   const [promos,setPromos]=useState([]);
   const [minOrder,setMinOrder]=useState(0);
   const [delivFee,setDelivFee]=useState(0);
-  const [orders,setOrders]=useState(loadOrds);
+  const [orders,setOrders]=useState([]); // 初始為空，只讀 Firebase
   const [step,setStep]=useState(1);
   const [nameVal,setNameVal]=useState("");
   const [phoneVal,setPhoneVal]=useState("");
