@@ -540,7 +540,7 @@ function App(){
       window.addEventListener("blur",blurHandler,{once:true});
     }
     
-    alert("✅ 訂單已提交！");
+    alert("✅ 訂單已提交！Order Submitted!");
     reset();
   };
   const copy=()=>{
@@ -775,7 +775,7 @@ function App(){
           </div>
           {pay==="EFT"&&<div style={{background:"#F0F7FF",border:"1.5px solid #B5D4F4",borderRadius:10,padding:"12px 14px",marginTop:10}}>
             <div style={{fontSize:13,fontWeight:500,color:"#0C447C",marginBottom:8}}>🏦 EFT Banking Details</div>
-            {[["Bank","Capitec Bank"],["Acc Name","Intelage Trading cc"],["Acc No","1055134590"],["Branch Code","450105"]].map(([k,v])=>(
+            {[["Bank","Capitec Business"],["Acc Name","Intelage Trading cc"],["Acc No","1055134590"],["Branch Code","450105"]].map(([k,v])(
               <div key={k} style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{fontSize:12,color:"#555"}}>{k}</span><span style={{fontSize:13,fontWeight:500,color:"#0C447C"}}>{v}</span></div>
             ))}
             <div style={{fontSize:11,color:"#888",marginTop:8,borderTop:"1px solid #B5D4F4",paddingTop:8}}>請以姓名作為付款參考 Use your name as reference</div>
