@@ -655,7 +655,7 @@ function App(){
         </div>}
         {adminTab==="orders"&&<>
           {orders.length===0&&<div style={{textAlign:"center",color:"#aaa",padding:"40px 0"}}>尚無訂單記錄</div>}
-          {orders.map(o=>(
+          {orders.sort((a,b)=>new Date(b.ts)-new Date(a.ts)).map(o=>(
             <div key={o.no} style={{background:"#fff",border:`1.5px solid ${BORDER}`,borderRadius:10,padding:"12px",marginBottom:10}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}><div style={{flex:1}}><div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:13,fontWeight:500,color:NAVY}}>#{o.no} · {o.name}</span><span style={{color:RED,fontWeight:500}}>R{o.total}</span></div><div style={{fontSize:12,color:"#888",margin:"4px 0"}}>{o.ts} · {o.pickup} · {o.pay}</div>{o.items.map((i,idx)=><div key={idx} style={{fontSize:12,color:"#555"}}>{i.name} × {i.qty}</div>)}{o.note&&<div style={{fontSize:11,color:"#aaa",marginTop:4}}>備註：{o.note}</div>}</div><button onClick={()=>{if(confirm(`確定刪除訂單 #${o.no}？`)){const newOrders=orders.filter(x=>x.no!==o.no);setOrders(newOrders);if(window.fbDb){window.fbDb.ref("orders").once("value",snap=>{snap.forEach(child=>{if(child.val().no===o.no){window.fbDb.ref(`orders/${child.key}`).remove();}});});}alert("✅ 訂單已刪除，分析數據已更新");}}} style={{padding:"4px 8px",borderRadius:6,border:`1px solid ${RED}`,background:"#fff",color:RED,fontSize:11,cursor:"pointer",whiteSpace:"nowrap",marginLeft:8}}>✕ 刪除</button></div>
             </div>
