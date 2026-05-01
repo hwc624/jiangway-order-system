@@ -84,7 +84,22 @@ const ALL=MENU.flatMap(c=>c.items);
 const RED="#C0392B",DARK="#2C1A0E",BORDER="#E8D5B7",NAVY="#2C3E50";
 const WA="27791325590",PIN="90888",WAGROUP="FoKtpmRCv4rKgYpGOph73x";
 
-function getNo(){const n=parseInt(localStorage.getItem("jw_no")||"0")+1;localStorage.setItem("jw_no",n);return String(n).padStart(4,"0");}
+function getNo(){
+  const today=new Date().toLocaleDateString("zh-TW");
+  const lastDate=localStorage.getItem("jw_no_date")||"";
+  let n;
+  if(today!==lastDate){
+    // 新的一天，從 1 開始
+    n=1;
+    localStorage.setItem("jw_no_date",today);
+    localStorage.setItem("jw_no",n);
+  } else {
+    // 同一天，加 1
+    n=parseInt(localStorage.getItem("jw_no")||"0")+1;
+    localStorage.setItem("jw_no",n);
+  }
+  return String(n).padStart(4,"0");
+}
 function saveOrd(o){
   // 完全禁用本地保存
   // const l=JSON.parse(localStorage.getItem("jw_orders")||"[]");
@@ -515,33 +530,17 @@ function App(){
       });
     }
     
-    // 發送 WhatsApp
+    // 重置（先清空 cart 等）
+    reset();
+    
+    // 發送 WhatsApp（直接跳轉，不再用 alert 阻擋）
     if(isInWeChat()){
       copy();
       alert("📋 訂單文字已複製！\n\n因為您在 WeChat 內無法直接跳轉到 WhatsApp。\n\n請按以下步驟：\n1️⃣ 打開 WhatsApp\n2️⃣ 搜尋江味齋\n3️⃣ 長按輸入框選「貼上」");
-    } else if(isIPhone()){
-      window.location.href=`https://wa.me/${waNum}?text=${encoded}`;
     } else {
-      const appUrl=`whatsapp://send?phone=${waNum}&text=${encoded}`;
-      const webUrl=`https://wa.me/${waNum}?text=${encoded}`;
-      const iframe=document.createElement("iframe");
-      iframe.style.display="none";
-      iframe.src=appUrl;
-      document.body.appendChild(iframe);
-      const timeoutId=setTimeout(()=>{
-        try{document.body.removeChild(iframe);}catch(e){}
-        window.location.href=webUrl;
-      },1500);
-      const blurHandler=()=>{
-        clearTimeout(timeoutId);
-        try{document.body.removeChild(iframe);}catch(e){}
-        window.removeEventListener("blur",blurHandler);
-      };
-      window.addEventListener("blur",blurHandler,{once:true});
+      // 所有非 WeChat 瀏覽器都用 wa.me，最穩定
+      window.location.href=`https://wa.me/${waNum}?text=${encoded}`;
     }
-    
-    alert("✅ 訂單已提交！Order Submitted!");
-    reset();
   };
   const copy=()=>{
     const txt=orderTxt();
