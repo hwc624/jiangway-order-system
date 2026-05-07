@@ -84,6 +84,38 @@ const ALL=MENU.flatMap(c=>c.items);
 const RED="#C0392B",DARK="#2C1A0E",BORDER="#E8D5B7",NAVY="#2C3E50";
 const WA="27791325590",PIN="90888",WAGROUP="FoKtpmRCv4rKgYpGOph73x";
 
+// 解析中文時間字串為時間戳（用於排序）
+// 例如 "2026/5/7 上午10:48:20" → 數字
+function parseTs(ts){
+  if(!ts) return 0;
+  try{
+    // 拆解日期跟時間
+    const parts=ts.trim().split(" ");
+    if(parts.length<2) return new Date(ts).getTime()||0;
+    const dateStr=parts[0]; // "2026/5/7"
+    let timeStr=parts[1];   // "上午10:48:20" 或 "下午4:30:54"
+    
+    // 處理上午/下午
+    let isPM=false;
+    if(timeStr.startsWith("下午")){
+      isPM=true;
+      timeStr=timeStr.replace("下午","");
+    } else if(timeStr.startsWith("上午")){
+      timeStr=timeStr.replace("上午","");
+    }
+    
+    const [y,m,d]=dateStr.split("/").map(Number);
+    const [hh,mm,ss]=timeStr.split(":").map(Number);
+    let hour=hh;
+    if(isPM&&hour<12) hour+=12;
+    if(!isPM&&hour===12) hour=0;
+    
+    return new Date(y,m-1,d,hour,mm||0,ss||0).getTime();
+  }catch(e){
+    return new Date(ts).getTime()||0;
+  }
+}
+
 function getNo(){
   const today=new Date().toLocaleDateString("zh-TW");
   const lastDate=localStorage.getItem("jw_no_date")||"";
@@ -427,7 +459,7 @@ function App(){
       });
       
       // 按時間排序（最新在上）
-      fbOrdersList.sort((a,b)=>new Date(b.ts)-new Date(a.ts));
+      fbOrdersList.sort((a,b)=>parseTs(b.ts)-parseTs(a.ts));
       
       setOrders(fbOrdersList.slice(0,200));
       console.log("📡 從 Firebase orders 更新訂單，共", fbOrdersList.length, "筆");
@@ -566,14 +598,33 @@ function App(){
   };
   const isInWeChat=()=>/micromessenger/i.test(navigator.userAgent);
   const isIPhone=()=>/iPhone|iPad|iPod/.test(navigator.userAgent);
-  const sendWA=()=>{
-    const txt=orderTxt();
-    const encoded=encodeURIComponent(txt);
+  const sendWA=async ()=>{
     const waNum=WA; // 27791325590
+    
+    // 從 Firebase 計算當天已有的訂單數，決定本訂單編號
+    let realOrdNo=ordNo;
+    const todayDateStr=new Date().toLocaleDateString("zh-TW"); // 例如：2026/5/7
+    if(window.fbDb){
+      try{
+        const snap=await window.fbDb.ref("orders").once("value");
+        let todayCount=0;
+        snap.forEach(child=>{
+          const o=child.val();
+          if(o.ts){
+            // ts 格式類似 "2026/5/7 上午10:48:20"
+            const orderDate=o.ts.split(" ")[0]; // 取日期部分
+            if(orderDate===todayDateStr) todayCount++;
+          }
+        });
+        realOrdNo=String(todayCount+1).padStart(4,"0");
+      }catch(err){
+        console.warn("⚠️ 無法計算當天訂單數，使用本地編號:", err.message);
+      }
+    }
     
     // 創建訂單物件
     const newOrder={
-      no:ordNo,
+      no:realOrdNo,
       name:nameVal,
       phone:phoneVal,
       pickup,
@@ -593,20 +644,26 @@ function App(){
       ts:new Date().toLocaleString("zh-TW")
     };
     
-    // 保存到 Firebase orders（只在提交時上傳）
+    // 保存到 Firebase orders（用 push 確保 key 唯一）
     if(window.fbDb){
-      const ordKey=`order_${newOrder.no}_${Date.now()}`;
-      window.fbDb.ref(`orders/${ordKey}`).set(newOrder).catch(err=>{
+      const ordKey=`order_${realOrdNo}_${Date.now()}`;
+      try{
+        await window.fbDb.ref(`orders/${ordKey}`).set(newOrder);
+      }catch(err){
         console.error("❌ Firebase 存訂單失敗:", err.message);
-      });
+      }
     }
+    
+    // 重新生成訂單文字（用真實編號）
+    const txt=orderTxt().replace(/#\d+/, "#"+realOrdNo);
+    const encoded=encodeURIComponent(txt);
     
     // 重置（先清空 cart 等）
     reset();
     
     // 發送 WhatsApp（直接跳轉，不再用 alert 阻擋）
     if(isInWeChat()){
-      copy();
+      navigator.clipboard&&navigator.clipboard.writeText(txt);
       alert("📋 訂單文字已複製！\n\n因為您在 WeChat 內無法直接跳轉到 WhatsApp。\n\n請按以下步驟：\n1️⃣ 打開 WhatsApp\n2️⃣ 搜尋江味齋\n3️⃣ 長按輸入框選「貼上」");
     } else {
       // 所有非 WeChat 瀏覽器都用 wa.me，最穩定
@@ -810,7 +867,7 @@ function App(){
         </div>}
         {adminTab==="orders"&&<>
           {orders.length===0&&<div style={{textAlign:"center",color:"#aaa",padding:"40px 0"}}>尚無訂單記錄</div>}
-          {orders.sort((a,b)=>new Date(b.ts)-new Date(a.ts)).map(o=>(
+          {orders.sort((a,b)=>parseTs(b.ts)-parseTs(a.ts)).map(o=>(
             <div key={o.no} style={{background:"#fff",border:`1.5px solid ${BORDER}`,borderRadius:10,padding:"12px",marginBottom:10}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}><div style={{flex:1}}><div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:13,fontWeight:500,color:NAVY}}>#{o.no} · {o.name}</span><span style={{color:RED,fontWeight:500}}>R{o.total}</span></div><div style={{fontSize:12,color:"#888",margin:"4px 0"}}>{o.ts} · {o.pickup} · {o.pay}</div>{o.items.map((i,idx)=><div key={idx} style={{fontSize:12,color:"#555"}}>{i.name} × {i.qty}</div>)}{o.note&&<div style={{fontSize:11,color:"#aaa",marginTop:4}}>備註：{o.note}</div>}</div><button onClick={()=>{if(confirm(`確定刪除訂單 #${o.no} (${o.name})？`)){if(window.fbDb&&o._fbKey){window.fbDb.ref(`orders/${o._fbKey}`).remove().then(()=>{alert("✅ 訂單已刪除");}).catch(err=>{alert("❌ 刪除失敗：" + err.message);});}else{alert("❌ 找不到訂單 key");}}}} style={{padding:"4px 8px",borderRadius:6,border:`1px solid ${RED}`,background:"#fff",color:RED,fontSize:11,cursor:"pointer",whiteSpace:"nowrap",marginLeft:8}}>✕ 刪除</button></div>
             </div>
