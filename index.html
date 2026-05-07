@@ -600,31 +600,10 @@ function App(){
   const isIPhone=()=>/iPhone|iPad|iPod/.test(navigator.userAgent);
   const sendWA=async ()=>{
     const waNum=WA; // 27791325590
+    const todayDateStr=new Date().toLocaleDateString("zh-TW");
     
-    // 從 Firebase 計算當天已有的訂單數，決定本訂單編號
-    let realOrdNo=ordNo;
-    const todayDateStr=new Date().toLocaleDateString("zh-TW"); // 例如：2026/5/7
-    if(window.fbDb){
-      try{
-        const snap=await window.fbDb.ref("orders").once("value");
-        let todayCount=0;
-        snap.forEach(child=>{
-          const o=child.val();
-          if(o.ts){
-            // ts 格式類似 "2026/5/7 上午10:48:20"
-            const orderDate=o.ts.split(" ")[0]; // 取日期部分
-            if(orderDate===todayDateStr) todayCount++;
-          }
-        });
-        realOrdNo=String(todayCount+1).padStart(4,"0");
-      }catch(err){
-        console.warn("⚠️ 無法計算當天訂單數，使用本地編號:", err.message);
-      }
-    }
-    
-    // 創建訂單物件
-    const newOrder={
-      no:realOrdNo,
+    // 先準備訂單資料（不依賴 await，避免延遲跳轉）
+    const baseOrder={
       name:nameVal,
       phone:phoneVal,
       pickup,
@@ -644,30 +623,59 @@ function App(){
       ts:new Date().toLocaleString("zh-TW")
     };
     
-    // 保存到 Firebase orders（用 push 確保 key 唯一）
+    // 計算當天訂單編號（嘗試從 Firebase）
+    let realOrdNo=ordNo;
     if(window.fbDb){
-      const ordKey=`order_${realOrdNo}_${Date.now()}`;
       try{
-        await window.fbDb.ref(`orders/${ordKey}`).set(newOrder);
+        const snap=await window.fbDb.ref("orders").once("value");
+        let todayCount=0;
+        snap.forEach(child=>{
+          const o=child.val();
+          if(o.ts){
+            const orderDate=o.ts.split(" ")[0];
+            if(orderDate===todayDateStr) todayCount++;
+          }
+        });
+        realOrdNo=String(todayCount+1).padStart(4,"0");
       }catch(err){
-        console.error("❌ Firebase 存訂單失敗:", err.message);
+        console.warn("⚠️ 無法計算當天訂單數:", err.message);
       }
     }
     
-    // 重新生成訂單文字（用真實編號）
+    const newOrder={no:realOrdNo, ...baseOrder};
+    
+    // 準備 WhatsApp 訊息（用真實編號）
     const txt=orderTxt().replace(/#\d+/, "#"+realOrdNo);
     const encoded=encodeURIComponent(txt);
+    const waUrl=`https://wa.me/${waNum}?text=${encoded}`;
     
-    // 重置（先清空 cart 等）
-    reset();
+    // 背景儲存 Firebase（不等待，避免延遲跳轉）
+    if(window.fbDb){
+      const ordKey=`order_${realOrdNo}_${Date.now()}`;
+      window.fbDb.ref(`orders/${ordKey}`).set(newOrder).catch(err=>{
+        console.error("❌ Firebase 存訂單失敗:", err.message);
+      });
+    }
     
-    // 發送 WhatsApp（直接跳轉，不再用 alert 阻擋）
+    // 立刻跳轉 WhatsApp（最重要，不被任何東西阻擋）
     if(isInWeChat()){
-      navigator.clipboard&&navigator.clipboard.writeText(txt);
+      // WeChat 無法跳轉，複製訊息
+      try{
+        if(navigator.clipboard){
+          await navigator.clipboard.writeText(txt);
+        }else{
+          const t=document.createElement("textarea");
+          t.value=txt;document.body.appendChild(t);t.select();
+          document.execCommand("copy");document.body.removeChild(t);
+        }
+      }catch(e){console.error("複製失敗",e);}
       alert("📋 訂單文字已複製！\n\n因為您在 WeChat 內無法直接跳轉到 WhatsApp。\n\n請按以下步驟：\n1️⃣ 打開 WhatsApp\n2️⃣ 搜尋江味齋\n3️⃣ 長按輸入框選「貼上」");
+      reset();
     } else {
-      // 所有非 WeChat 瀏覽器都用 wa.me，最穩定
-      window.location.href=`https://wa.me/${waNum}?text=${encoded}`;
+      // 立刻跳轉，不要 reset 也不要做任何 React 操作（避免打斷跳轉）
+      window.location.href=waUrl;
+      // reset 延遲執行（這時跳轉已開始）
+      setTimeout(()=>{reset();},500);
     }
   };
   const copy=()=>{
