@@ -60,7 +60,6 @@ const MENU=[
     {id:"a7",name:"鹽酥雞",nameEn:"Popcorn Chicken",price:90},
     {id:"a8",name:"刷醬雞排",nameEn:"Brushed Sauce Chicken Cutlet",price:90},
     {id:"a9",name:"蜜汁雞排",nameEn:"Honey Glazed Chicken Cutlet",price:90},
-    {id:"a10",name:"香腸飯",nameEn:"TW Sausage Rice",price:100},
   ]},
   {cat:"麵類 NOODLE",items:[
     {id:"n1",name:"肉羹麵",nameEn:"Pork Thick Soup Noodle",price:130},
@@ -75,6 +74,8 @@ const MENU=[
     {id:"d5",name:"黑松沙士",nameEn:"Heysong Sarsaparilla",price:30},
     {id:"d6",name:"Valpre 礦泉水",nameEn:"Valpre Still Water",price:20},
     {id:"d7",name:"Valpre 氣泡水",nameEn:"Valpre Sparkling Water",price:20},
+    {id:"d8",name:"可爾必思",nameEn:"Calpis",price:30},
+    {id:"d9",name:"阿薩姆奶茶",nameEn:"Assam Milk Tea",price:20},
   ]},
   {cat:"🧊 冷凍商品 FROZEN ITEMS",items:[
     {id:"f1",name:"芋粿巧（4個）",nameEn:"Taro Cake (4pcs)",price:90},
@@ -478,10 +479,10 @@ function App(){
     const promosRef=window.fbDb.ref("promos");
     const unsubscribe=promosRef.on("value",snapshot=>{
       const list=[];
-      snapshot.forEach(c=>list.push(c.val()));
+      snapshot.forEach(c=>{const v=c.val(); if(v) list.push(v);});
       setPromos(list);
       console.log("📡 從 Firebase 更新促銷，共", list.length, "筆");
-    });
+    },err=>{console.warn("⚠️ 促銷讀取失敗（可能 Firebase 規則未設定）:", err.message);});
     return ()=>promosRef.off("value",unsubscribe);
   },[]);
 
@@ -493,7 +494,7 @@ function App(){
       const data=snapshot.val()||{};
       setMenuOverrides(data);
       console.log("📡 從 Firebase 更新菜單覆蓋，共", Object.keys(data).length, "項");
-    });
+    },err=>{console.warn("⚠️ 菜單覆蓋讀取失敗（可能 Firebase 規則未設定）:", err.message);});
     return ()=>menuRef.off("value",unsubscribe);
   },[]);
 
@@ -503,10 +504,10 @@ function App(){
     const customRef=window.fbDb.ref("custom_items");
     const unsubscribe=customRef.on("value",snapshot=>{
       const list=[];
-      snapshot.forEach(c=>list.push({...c.val(),_fbKey:c.key}));
+      snapshot.forEach(c=>{const v=c.val(); if(v) list.push({...v,_fbKey:c.key});});
       setCustomItems(list);
       console.log("📡 從 Firebase 更新自訂商品，共", list.length, "項");
-    });
+    },err=>{console.warn("⚠️ 自訂商品讀取失敗（可能 Firebase 規則未設定）:", err.message);});
     return ()=>customRef.off("value",unsubscribe);
   },[]);
 
@@ -559,7 +560,15 @@ function App(){
   const adj=useCallback((id,d)=>setCart(c=>{const n=Math.max(0,(c[id]||0)+d);const x={...c};if(n===0)delete x[id];else x[id]=n;return x;}),[]);
   const adjA=(id,d)=>setAddonQty(a=>({...a,[id]:Math.max(0,(a[id]||0)+d)}));
   const tryPin=()=>{if(pinRef.current===PIN){setMode("admin");setPinErr(false);pinRef.current="";}else setPinErr(true);};
-  const go2=()=>{setNameVal(nRef.current);setPhoneVal(phRef.current);if(nRef.current.trim())setStep(2);};
+  const go2=()=>{
+    setNameVal(nRef.current);
+    setPhoneVal(phRef.current);
+    if(!nRef.current||!nRef.current.trim()){
+      alert("⚠️ 請輸入姓名 Please enter your name");
+      return;
+    }
+    setStep(2);
+  };
   const go4=()=>{
     setAddr(adRef.current);setNote(noRef.current);
     const no=getNo();setOrdNo(no);
@@ -606,7 +615,16 @@ function App(){
     return /micromessenger|FBAN|FBAV|Instagram|Line\/|LinkedInApp|Twitter/i.test(ua);
   };
   const sendWA=async ()=>{
-    const todayDateStr=new Date().toLocaleDateString("zh-TW");
+    // 正規化日期字串（去掉前導零、統一格式）
+    const normDate=(s)=>{
+      if(!s) return "";
+      // 取日期部分（空格前），並把 2026/05/03 → 2026/5/3
+      const datePart=s.trim().split(" ")[0];
+      const nums=datePart.split("/").map(x=>parseInt(x,10));
+      if(nums.length<3||nums.some(isNaN)) return datePart;
+      return `${nums[0]}/${nums[1]}/${nums[2]}`;
+    };
+    const todayDateStr=normDate(new Date().toLocaleDateString("zh-TW"));
     
     // 計算當天訂單編號（從 Firebase）
     let realOrdNo=ordNo;
@@ -616,8 +634,8 @@ function App(){
         let todayCount=0;
         snap.forEach(child=>{
           const o=child.val();
-          if(o.ts){
-            const orderDate=o.ts.split(" ")[0];
+          if(o&&o.ts){
+            const orderDate=normDate(o.ts);
             if(orderDate===todayDateStr) todayCount++;
           }
         });
@@ -865,11 +883,19 @@ function App(){
         {adminTab==="orders"&&<>
           {orders.length===0&&<div style={{textAlign:"center",color:"#aaa",padding:"40px 0"}}>尚無訂單記錄</div>}
           {(()=>{
+            // 正規化日期（去前導零）
+            const normD=(s)=>{
+              if(!s) return "未知日期";
+              const datePart=s.trim().split(" ")[0];
+              const nums=datePart.split("/").map(x=>parseInt(x,10));
+              if(nums.length<3||nums.some(isNaN)) return datePart;
+              return `${nums[0]}/${String(nums[1]).padStart(2,"0")}/${String(nums[2]).padStart(2,"0")}`;
+            };
             // 按日期分組訂單
             const sorted=[...orders].sort((a,b)=>parseTs(b.ts)-parseTs(a.ts));
             const groups={};
             sorted.forEach(o=>{
-              const date=o.ts?o.ts.split(" ")[0]:"未知日期";
+              const date=normD(o.ts);
               if(!groups[date])groups[date]=[];
               groups[date].push(o);
             });
