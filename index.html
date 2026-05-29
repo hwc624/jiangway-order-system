@@ -615,33 +615,52 @@ function App(){
     return /micromessenger|FBAN|FBAV|Instagram|Line\/|LinkedInApp|Twitter/i.test(ua);
   };
   const sendWA=async ()=>{
-    // 正規化日期字串（去掉前導零、統一格式）
+    // 正規化日期字串：2026/05/27 或 2026/5/27 → 2026-05-27（統一格式）
     const normDate=(s)=>{
       if(!s) return "";
-      // 取日期部分（空格前），並把 2026/05/03 → 2026/5/3
       const datePart=s.trim().split(" ")[0];
-      const nums=datePart.split("/").map(x=>parseInt(x,10));
+      const nums=datePart.split(/[\/\-]/).map(x=>parseInt(x,10));
       if(nums.length<3||nums.some(isNaN)) return datePart;
-      return `${nums[0]}/${nums[1]}/${nums[2]}`;
+      return `${nums[0]}-${String(nums[1]).padStart(2,"0")}-${String(nums[2]).padStart(2,"0")}`;
     };
-    const todayDateStr=normDate(new Date().toLocaleDateString("zh-TW"));
     
-    // 計算當天訂單編號（從 Firebase）
-    let realOrdNo=ordNo;
+    // 用今天的本地日期作為 key（例如 "2026-05-27"）
+    const today=new Date();
+    const todayKey=`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
+    
+    let realOrdNo="0001"; // 預設值
+    
+    // 使用 Firebase Transaction 確保編號絕對不重複（原子操作）
     if(window.fbDb){
       try{
-        const snap=await window.fbDb.ref("orders").once("value");
-        let todayCount=0;
-        snap.forEach(child=>{
-          const o=child.val();
-          if(o&&o.ts){
-            const orderDate=normDate(o.ts);
-            if(orderDate===todayDateStr) todayCount++;
-          }
+        const counterRef=window.fbDb.ref(`order_counters/${todayKey}`);
+        const result=await counterRef.transaction(current=>{
+          // 如果今天還沒有任何訂單，從 1 開始
+          return (current||0)+1;
         });
-        realOrdNo=String(todayCount+1).padStart(4,"0");
+        
+        if(result.committed){
+          const newCount=result.snapshot.val();
+          realOrdNo=String(newCount).padStart(4,"0");
+          console.log(`✅ 取得訂單編號 #${realOrdNo} (今日第 ${newCount} 筆)`);
+        }else{
+          // Transaction 失敗，回退到舊方法
+          console.warn("⚠️ Transaction 失敗，使用備援方法");
+          const snap=await window.fbDb.ref("orders").once("value");
+          let todayCount=0;
+          snap.forEach(child=>{
+            const o=child.val();
+            if(o&&o.ts){
+              const orderDate=normDate(o.ts);
+              if(orderDate===normDate(todayKey.replace(/-/g,"/"))) todayCount++;
+            }
+          });
+          realOrdNo=String(todayCount+1).padStart(4,"0");
+        }
       }catch(err){
-        console.warn("⚠️ 無法計算當天訂單數:", err.message);
+        console.error("❌ 取得訂單編號失敗:", err.message);
+        // 用時間戳作為備援編號（絕不重複）
+        realOrdNo=String(Date.now()).slice(-4);
       }
     }
     
@@ -655,6 +674,7 @@ function App(){
     // 建立訂單物件
     const newOrder={
       no:realOrdNo,
+      dateKey:todayKey, // 加上日期 key 方便日後查詢
       name:nameVal,
       phone:phoneVal,
       pickup,
@@ -674,11 +694,12 @@ function App(){
       ts:new Date().toLocaleString("zh-TW")
     };
     
-    // 存到 Firebase（背景）
+    // 存到 Firebase（用 push 確保 key 絕對唯一）
     if(window.fbDb){
-      const ordKey=`order_${realOrdNo}_${Date.now()}`;
-      window.fbDb.ref(`orders/${ordKey}`).set(newOrder).catch(err=>{
+      const newRef=window.fbDb.ref("orders").push();
+      newRef.set(newOrder).catch(err=>{
         console.error("❌ Firebase 存訂單失敗:", err.message);
+        alert("⚠️ 訂單上傳失敗，請截圖並通知店家\n"+err.message);
       });
     }
     
