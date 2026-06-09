@@ -615,52 +615,44 @@ function App(){
     return /micromessenger|FBAN|FBAV|Instagram|Line\/|LinkedInApp|Twitter/i.test(ua);
   };
   const sendWA=async ()=>{
-    // 正規化日期字串：2026/05/27 或 2026/5/27 → 2026-05-27（統一格式）
-    const normDate=(s)=>{
-      if(!s) return "";
-      const datePart=s.trim().split(" ")[0];
-      const nums=datePart.split(/[\/\-]/).map(x=>parseInt(x,10));
-      if(nums.length<3||nums.some(isNaN)) return datePart;
-      return `${nums[0]}-${String(nums[1]).padStart(2,"0")}-${String(nums[2]).padStart(2,"0")}`;
-    };
-    
-    // 用今天的本地日期作為 key（例如 "2026-05-27"）
+    // 用今天的本地日期作為 key（例如 "2026-06-09"）
     const today=new Date();
     const todayKey=`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
     
     let realOrdNo="0001"; // 預設值
+    let usedTransaction=false;
     
-    // 使用 Firebase Transaction 確保編號絕對不重複（原子操作）
+    // 方法一：嘗試使用 Firebase Transaction（需要 order_counters 規則）
     if(window.fbDb){
       try{
         const counterRef=window.fbDb.ref(`order_counters/${todayKey}`);
         const result=await counterRef.transaction(current=>{
-          // 如果今天還沒有任何訂單，從 1 開始
           return (current||0)+1;
         });
         
-        if(result.committed){
+        if(result&&result.committed){
           const newCount=result.snapshot.val();
           realOrdNo=String(newCount).padStart(4,"0");
-          console.log(`✅ 取得訂單編號 #${realOrdNo} (今日第 ${newCount} 筆)`);
-        }else{
-          // Transaction 失敗，回退到舊方法
-          console.warn("⚠️ Transaction 失敗，使用備援方法");
-          const snap=await window.fbDb.ref("orders").once("value");
-          let todayCount=0;
-          snap.forEach(child=>{
-            const o=child.val();
-            if(o&&o.ts){
-              const orderDate=normDate(o.ts);
-              if(orderDate===normDate(todayKey.replace(/-/g,"/"))) todayCount++;
-            }
-          });
-          realOrdNo=String(todayCount+1).padStart(4,"0");
+          usedTransaction=true;
+          console.log(`✅ [Transaction] 取得訂單編號 #${realOrdNo} (今日第 ${newCount} 筆)`);
         }
       }catch(err){
-        console.error("❌ 取得訂單編號失敗:", err.message);
-        // 用時間戳作為備援編號（絕不重複）
-        realOrdNo=String(Date.now()).slice(-4);
+        console.warn("⚠️ Transaction 失敗（可能 Firebase 規則未設定 order_counters）:", err.message);
+      }
+    }
+    
+    // 方法二：Transaction 失敗時，用 dateKey 欄位查詢（不靠時間戳字串比對）
+    if(!usedTransaction&&window.fbDb){
+      try{
+        const snap=await window.fbDb.ref("orders").orderByChild("dateKey").equalTo(todayKey).once("value");
+        let todayCount=0;
+        snap.forEach(()=>{todayCount++;});
+        realOrdNo=String(todayCount+1).padStart(4,"0");
+        console.log(`📊 [備援] 取得訂單編號 #${realOrdNo} (今日第 ${todayCount+1} 筆)`);
+      }catch(err){
+        console.warn("⚠️ 備援查詢失敗:", err.message);
+        // 最後備援：用時間戳，但補成 4 位數的形式（前面補 9 表示這是錯誤備援）
+        realOrdNo="9"+String(Date.now()).slice(-3);
       }
     }
     
@@ -671,10 +663,10 @@ function App(){
     const frozenTxt=orderTxt().replace(/#\d+/, "#"+realOrdNo);
     setSubmittedTxt(frozenTxt);
     
-    // 建立訂單物件
+    // 建立訂單物件（dateKey 是分組關鍵）
     const newOrder={
       no:realOrdNo,
-      dateKey:todayKey, // 加上日期 key 方便日後查詢
+      dateKey:todayKey, // 重要：用此欄位分組，不用 ts 字串
       name:nameVal,
       phone:phoneVal,
       pickup,
@@ -904,27 +896,34 @@ function App(){
         {adminTab==="orders"&&<>
           {orders.length===0&&<div style={{textAlign:"center",color:"#aaa",padding:"40px 0"}}>尚無訂單記錄</div>}
           {(()=>{
-            // 正規化日期（去前導零）
-            const normD=(s)=>{
-              if(!s) return "未知日期";
-              const datePart=s.trim().split(" ")[0];
-              const nums=datePart.split("/").map(x=>parseInt(x,10));
+            // 取得訂單的日期 key：優先用 dateKey 欄位（新訂單）；沒有的話 fallback 解析 ts（舊訂單）
+            const getDateKey=(o)=>{
+              if(o.dateKey) return o.dateKey; // 新訂單直接用此欄位（格式 2026-06-09）
+              if(!o.ts) return "未知日期";
+              const datePart=o.ts.trim().split(" ")[0];
+              const nums=datePart.split(/[\/\-]/).map(x=>parseInt(x,10));
               if(nums.length<3||nums.some(isNaN)) return datePart;
+              return `${nums[0]}-${String(nums[1]).padStart(2,"0")}-${String(nums[2]).padStart(2,"0")}`;
+            };
+            // 顯示用的格式
+            const dispDate=(key)=>{
+              const nums=key.split(/[\/\-]/).map(x=>parseInt(x,10));
+              if(nums.length<3||nums.some(isNaN)) return key;
               return `${nums[0]}/${String(nums[1]).padStart(2,"0")}/${String(nums[2]).padStart(2,"0")}`;
             };
             // 按日期分組訂單
             const sorted=[...orders].sort((a,b)=>parseTs(b.ts)-parseTs(a.ts));
             const groups={};
             sorted.forEach(o=>{
-              const date=normD(o.ts);
-              if(!groups[date])groups[date]=[];
-              groups[date].push(o);
+              const dk=getDateKey(o);
+              if(!groups[dk])groups[dk]=[];
+              groups[dk].push(o);
             });
             // 各組內也按時間排序（新→舊）
-            return Object.entries(groups).map(([date,os])=>(
-              <div key={date} style={{marginBottom:20}}>
+            return Object.entries(groups).map(([dk,os])=>(
+              <div key={dk} style={{marginBottom:20}}>
                 <div style={{background:NAVY,color:"#fff",padding:"8px 12px",borderRadius:8,fontSize:13,fontWeight:500,marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <span>📅 {date}</span>
+                  <span>📅 {dispDate(dk)}</span>
                   <span style={{fontSize:11,opacity:0.85}}>{os.length} 筆訂單</span>
                 </div>
                 {os.map(o=>(
