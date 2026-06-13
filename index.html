@@ -83,7 +83,9 @@ const MENU=[
 ];
 const ALL=MENU.flatMap(c=>c.items);
 const RED="#C0392B",DARK="#2C1A0E",BORDER="#E8D5B7",NAVY="#2C3E50";
-const WA="27791325590",PIN="90888",WAGROUP="FoKtpmRCv4rKgYpGOph73x";
+const WA="27791325590",WAGROUP="FoKtpmRCv4rKgYpGOph73x";
+// PIN 經過簡單編碼，避免一眼就被看到（注意：前端密碼無法完全防破解）
+const PIN=(()=>{try{return atob("OTA4ODg=");}catch(e){return "90888";}})();
 
 // 解析中文時間字串為時間戳（用於排序）
 // 例如 "2026/5/7 上午10:48:20" → 數字
@@ -146,9 +148,20 @@ function loadOrds(){
 function loadSoldOut(){return JSON.parse(localStorage.getItem("jw_soldOut")||"{}");}
 function saveSoldOut(so){localStorage.setItem("jw_soldOut",JSON.stringify(so));}
 
-function getDates(){const d=[],now=new Date(),cur=new Date(now);while(d.length<14){d.push(new Date(cur));cur.setDate(cur.getDate()+1);}return d;}
+function getDates(){
+  const d=[];
+  const now=new Date();
+  // 正規化到當天中午 12:00（避免午夜時區/DST 邊界造成跳日）
+  const cur=new Date(now.getFullYear(),now.getMonth(),now.getDate(),12,0,0,0);
+  while(d.length<14){
+    d.push(new Date(cur));
+    cur.setDate(cur.getDate()+1);
+  }
+  return d;
+}
 const fmtDate=d=>d.toLocaleDateString("zh-TW",{month:"short",day:"numeric",weekday:"short"});
-const fmtKey=d=>d.toISOString().split("T")[0];
+// fmtKey 用本地時區（不用 toISOString，因為那會轉成 UTC 造成跨時區跳日 bug）
+const fmtKey=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 const isToday=d=>fmtKey(d)===fmtKey(new Date());
 function getSlots(dt){
   // 營業時間：週一到週六 10:00-19:00，週日 10:00-14:00
@@ -926,14 +939,21 @@ function App(){
                   <span>📅 {dispDate(dk)}</span>
                   <span style={{fontSize:11,opacity:0.85}}>{os.length} 筆訂單</span>
                 </div>
-                {os.map(o=>(
-                  <div key={o._fbKey||(o.no+o.ts)} style={{background:"#fff",border:`1.5px solid ${BORDER}`,borderRadius:10,padding:"12px",marginBottom:10}}>
+                {os.map(o=>{
+                  // 安全檢查：用品項重新驗算金額，發現竄改就警告
+                  const itemsTotal=(o.items||[]).reduce((s,i)=>s+(i.price||0)*(i.qty||0),0);
+                  const addonsTotal=(o.addons||[]).reduce((s,a)=>s+(a.addonPrice||0)*(a.qty||0),0);
+                  const expectedMin=itemsTotal+addonsTotal-(o.disc||0); // 不含運費的最低值
+                  const suspicious=o.total!==undefined&&itemsTotal>0&&(o.total<expectedMin-1||o.total>expectedMin+(o.fee||0)+1);
+                  return(
+                  <div key={o._fbKey||(o.no+o.ts)} style={{background:"#fff",border:`1.5px solid ${suspicious?RED:BORDER}`,borderRadius:10,padding:"12px",marginBottom:10}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                       <div style={{flex:1}}>
                         <div style={{display:"flex",justifyContent:"space-between"}}>
                           <span style={{fontSize:13,fontWeight:500,color:NAVY}}>#{o.no} · {o.name}</span>
                           <span style={{color:RED,fontWeight:500}}>R{o.total}</span>
                         </div>
+                        {suspicious&&<div style={{fontSize:11,color:RED,fontWeight:500,marginTop:2}}>⚠️ 金額異常！品項合計約 R{itemsTotal+addonsTotal}，請核對</div>}
                         <div style={{fontSize:12,color:"#888",margin:"4px 0"}}>{o.ts} · {o.pickup} · {o.pay}</div>
                         {o.items.map((i,idx)=><div key={idx} style={{fontSize:12,color:"#555"}}>{i.name} × {i.qty}</div>)}
                         {o.note&&<div style={{fontSize:11,color:"#aaa",marginTop:4}}>備註：{o.note}</div>}
@@ -951,11 +971,22 @@ function App(){
                       >✕ 刪除</button>
                     </div>
                   </div>
-                ))}
+                );})}
               </div>
             ));
           })()}
-          <button onClick={()=>{if(confirm("確定清除所有訂單記錄？")){localStorage.removeItem("jw_orders");localStorage.removeItem("jw_no");if(window.fbDb){window.fbDb.ref("orders").remove();}setOrders([]);}}} style={{width:"100%",padding:"10px",borderRadius:8,border:`1.5px solid ${BORDER}`,background:"#fff",color:"#aaa",fontSize:12,cursor:"pointer",marginTop:8}}>清除記錄</button>
+          <button onClick={()=>{
+            const inputPin=prompt("⚠️ 清除所有訂單是危險操作！\n請輸入店主 PIN 確認：");
+            if(inputPin===null)return; // 取消
+            if(inputPin!==PIN){alert("❌ PIN 錯誤，取消清除");return;}
+            if(confirm("⚠️ 最後確認：真的要清除所有訂單記錄嗎？此操作無法復原！")){
+              localStorage.removeItem("jw_orders");
+              localStorage.removeItem("jw_no");
+              if(window.fbDb){window.fbDb.ref("orders").remove();}
+              setOrders([]);
+              alert("✅ 已清除所有訂單記錄");
+            }
+          }} style={{width:"100%",padding:"10px",borderRadius:8,border:`1.5px solid ${BORDER}`,background:"#fff",color:"#aaa",fontSize:12,cursor:"pointer",marginTop:8}}>清除記錄</button>
         </>}
         {adminTab==="analytics"&&<AnalyticsTab orders={orders} BORDER={BORDER} RED={RED} NAVY={NAVY} DARK={DARK}/>}
         {adminTab==="qrcode"&&<QRCodeShare appUrl={typeof window!=="undefined"?window.location.href:""} BORDER={BORDER} RED={RED} NAVY={NAVY} DARK={DARK}/>}
@@ -1208,10 +1239,36 @@ function App(){
 }
 ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
 
-// PWA Service Worker 註冊
+// PWA Service Worker 註冊（強制檢查更新）
 if("serviceWorker" in navigator){
   navigator.serviceWorker.register("sw.js").then(reg=>{
     console.log("✅ Service Worker 已註冊");
+    
+    // 每次載入時主動檢查更新
+    reg.update();
+    
+    // 偵測到新版本時，自動套用
+    reg.addEventListener("updatefound", ()=>{
+      const newWorker = reg.installing;
+      if(newWorker){
+        newWorker.addEventListener("statechange", ()=>{
+          if(newWorker.state === "installed" && navigator.serviceWorker.controller){
+            console.log("🆕 偵測到新版本，正在套用...");
+            // 通知新 SW 立即接管
+            newWorker.postMessage("SKIP_WAITING");
+          }
+        });
+      }
+    });
+    
+    // 當新 SW 接管時，自動重新載入頁面
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener("controllerchange", ()=>{
+      if(refreshing) return;
+      refreshing = true;
+      console.log("🔄 重新載入以套用新版本");
+      window.location.reload();
+    });
   }).catch(err=>{
     console.warn("⚠️ Service Worker 註冊失敗:", err);
   });
