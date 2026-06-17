@@ -19,41 +19,26 @@
 <body>
 <div id="root"></div>
 <script>
-// ===== 版本檢查：自動清除舊快取，客戶無需手動操作 =====
-// 每次更新程式碼後，把下面的版本號 +1（例如 1.0.1 → 1.0.2）
-// 客戶打開 APP 時會自動偵測新版本並清除舊快取，確保用到最新版
-const APP_VERSION = "1.0.1";
-(function checkVersion(){
-  try {
-    const savedVersion = localStorage.getItem("jw_appVersion");
-    if (savedVersion !== APP_VERSION) {
-      console.log("🆕 偵測到新版本", savedVersion, "→", APP_VERSION, "，清除舊快取中...");
-      localStorage.setItem("jw_appVersion", APP_VERSION);
-
-      // 清除所有 Cache Storage（PWA 快取的舊 HTML/JS）
-      if ("caches" in window) {
-        caches.keys().then(names => {
-          names.forEach(name => caches.delete(name));
-        });
-      }
-
-      // 註銷舊的 Service Worker，下次載入會重新註冊最新版
-      if ("serviceWorker" in navigator) {
-        navigator.serviceWorker.getRegistrations().then(regs => {
-          regs.forEach(reg => reg.unregister());
-        });
-      }
-
-      // 只在「第一次發現新版本」時重新載入一次，避免無限重整
-      if (!sessionStorage.getItem("jw_reloadedForVersion")) {
-        sessionStorage.setItem("jw_reloadedForVersion", APP_VERSION);
-        location.reload(true);
-      }
+// ===== 版本檢查：安全版（不主動重整，避免迴圈）=====
+// 你的 sw.js 已經是「網路優先」策略，會自動抓最新的 HTML，
+// 所以這裡只負責「清掉舊的快取殘留」，不做 location.reload，避免全白卡死。
+// 每次更新程式碼後，把下面版本號 +1（例如 1.0.1 → 1.0.2）。
+const APP_VERSION = "1.0.2";
+try {
+  const savedVersion = localStorage.getItem("jw_appVersion");
+  if (savedVersion !== APP_VERSION) {
+    console.log("🆕 版本更新", savedVersion, "→", APP_VERSION);
+    localStorage.setItem("jw_appVersion", APP_VERSION);
+    // 只清快取，不重整、不動 Service Worker（交給 sw.js 自己處理）
+    if ("caches" in window) {
+      caches.keys().then(names => {
+        names.forEach(name => caches.delete(name));
+      }).catch(()=>{});
     }
-  } catch(e) {
-    console.warn("⚠️ 版本檢查失敗（不影響使用）:", e.message);
   }
-})();
+} catch(e) {
+  console.warn("⚠️ 版本檢查失敗（不影響使用）:", e.message);
+}
 
 // Firebase 初始化
 const firebaseConfig = {
