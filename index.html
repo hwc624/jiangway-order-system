@@ -18,7 +18,22 @@
 </head>
 <body>
 <div id="root"></div>
+<div id="errbox" style="display:none;position:fixed;top:0;left:0;right:0;z-index:99999;background:#C0392B;color:#fff;padding:14px;font-size:13px;font-family:monospace;white-space:pre-wrap;word-break:break-all;max-height:60vh;overflow:auto;"></div>
 <script>
+// ===== 手機錯誤捕捉：把 JS 錯誤直接顯示在畫面上 =====
+(function(){
+  function show(msg){
+    var box=document.getElementById("errbox");
+    if(box){box.style.display="block";box.textContent+=msg+"\n\n";}
+  }
+  window.addEventListener("error",function(e){
+    show("❌ 錯誤: "+(e.message||e.error)+"\n檔案: "+(e.filename||"?")+"\n行: "+(e.lineno||"?")+":"+(e.colno||"?"));
+  });
+  window.addEventListener("unhandledrejection",function(e){
+    show("❌ Promise 錯誤: "+(e.reason&&e.reason.message?e.reason.message:e.reason));
+  });
+})();
+
 // Firebase 初始化
 const firebaseConfig = {
   apiKey: "AIzaSyDummyKeyForPublicDatabase",
