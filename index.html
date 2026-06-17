@@ -18,21 +18,27 @@
 </head>
 <body>
 <div id="root"></div>
-<div id="errbox" style="display:none;position:fixed;top:0;left:0;right:0;z-index:99999;background:#C0392B;color:#fff;padding:14px;font-size:13px;font-family:monospace;white-space:pre-wrap;word-break:break-all;max-height:60vh;overflow:auto;"></div>
 <script>
-// ===== 手機錯誤捕捉：把 JS 錯誤直接顯示在畫面上 =====
-(function(){
-  function show(msg){
-    var box=document.getElementById("errbox");
-    if(box){box.style.display="block";box.textContent+=msg+"\n\n";}
+// ===== 版本檢查：安全版（不主動重整，避免迴圈）=====
+// 你的 sw.js 已經是「網路優先」策略，會自動抓最新的 HTML，
+// 所以這裡只負責「清掉舊的快取殘留」，不做 location.reload，避免全白卡死。
+// 每次更新程式碼後，把下面版本號 +1（例如 1.0.1 → 1.0.2）。
+const APP_VERSION = "1.0.2";
+try {
+  const savedVersion = localStorage.getItem("jw_appVersion");
+  if (savedVersion !== APP_VERSION) {
+    console.log("🆕 版本更新", savedVersion, "→", APP_VERSION);
+    localStorage.setItem("jw_appVersion", APP_VERSION);
+    // 只清快取，不重整、不動 Service Worker（交給 sw.js 自己處理）
+    if ("caches" in window) {
+      caches.keys().then(names => {
+        names.forEach(name => caches.delete(name));
+      }).catch(()=>{});
+    }
   }
-  window.addEventListener("error",function(e){
-    show("❌ 錯誤: "+(e.message||e.error)+"\n檔案: "+(e.filename||"?")+"\n行: "+(e.lineno||"?")+":"+(e.colno||"?"));
-  });
-  window.addEventListener("unhandledrejection",function(e){
-    show("❌ Promise 錯誤: "+(e.reason&&e.reason.message?e.reason.message:e.reason));
-  });
-})();
+} catch(e) {
+  console.warn("⚠️ 版本檢查失敗（不影響使用）:", e.message);
+}
 
 // Firebase 初始化
 const firebaseConfig = {
