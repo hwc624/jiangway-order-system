@@ -5,13 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <meta name="theme-color" content="#C0392B"/>
 <meta name="description" content="江味齋 JiangWay - 台式家常料理點餐系統"/>
-<link rel="manifest" href="manifest.json"/>
+
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect fill='%23C0392B' width='192' height='192'/><text x='50%' y='50%' font-size='100' font-weight='bold' fill='white' text-anchor='middle' dominant-baseline='middle'>江</text></svg>"/>
 <title>江味齋 JiangWay</title>
-<script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>*{box-sizing:border-box;margin:0;padding:0}body{background:#FDF6EC;font-family:sans-serif;color:#2C1A0E}input,select,textarea,button{font-family:sans-serif}</style>
@@ -1239,38 +1239,11 @@ function App(){
 }
 ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
 
-// PWA Service Worker 註冊（強制檢查更新）
+// Service Worker 已停用（避免快取問題）
 if("serviceWorker" in navigator){
-  navigator.serviceWorker.register("sw.js").then(reg=>{
-    console.log("✅ Service Worker 已註冊");
-    
-    // 每次載入時主動檢查更新
-    reg.update();
-    
-    // 偵測到新版本時，自動套用
-    reg.addEventListener("updatefound", ()=>{
-      const newWorker = reg.installing;
-      if(newWorker){
-        newWorker.addEventListener("statechange", ()=>{
-          if(newWorker.state === "installed" && navigator.serviceWorker.controller){
-            console.log("🆕 偵測到新版本，正在套用...");
-            // 通知新 SW 立即接管
-            newWorker.postMessage("SKIP_WAITING");
-          }
-        });
-      }
-    });
-    
-    // 當新 SW 接管時，自動重新載入頁面
-    let refreshing = false;
-    navigator.serviceWorker.addEventListener("controllerchange", ()=>{
-      if(refreshing) return;
-      refreshing = true;
-      console.log("🔄 重新載入以套用新版本");
-      window.location.reload();
-    });
-  }).catch(err=>{
-    console.warn("⚠️ Service Worker 註冊失敗:", err);
+  // 註銷所有舊的 Service Worker
+  navigator.serviceWorker.getRegistrations().then(regs=>{
+    regs.forEach(reg=>reg.unregister());
   });
 }
 </script>
