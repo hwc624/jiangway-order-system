@@ -3,18 +3,57 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<meta name="theme-color" content="#C0392B"/>
+<meta name="theme-color" content="#B5301F"/>
 <meta name="description" content="江味齋 JiangWay - 台式家常料理點餐系統"/>
 <link rel="manifest" href="manifest.json"/>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect fill='%23C0392B' width='192' height='192'/><text x='50%' y='50%' font-size='100' font-weight='bold' fill='white' text-anchor='middle' dominant-baseline='middle'>江</text></svg>"/>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect fill='%23B5301F' width='192' height='192'/><text x='50%' y='50%' font-size='100' font-weight='bold' fill='white' text-anchor='middle' dominant-baseline='middle'>江</text></svg>"/>
 <title>江味齋 JiangWay</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@600;700;900&family=Playfair+Display:ital,wght@1,500&display=swap" rel="stylesheet"/>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/@babel/standalone@7.23.10/babel.min.js" crossorigin></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" crossorigin></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-<style>*{box-sizing:border-box;margin:0;padding:0}body{background:#FDF6EC;font-family:sans-serif;color:#2C1A0E}input,select,textarea,button{font-family:sans-serif}</style>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background-color:#FBF3E4;
+  background-image:radial-gradient(rgba(181,48,31,0.06) 1px,transparent 1px);
+  background-size:18px 18px;
+  font-family:'Noto Sans TC','PingFang TC','Microsoft JhengHei',sans-serif;
+  color:#2C1A0E;
+  -webkit-font-smoothing:antialiased;
+}
+input,select,textarea,button{font-family:inherit}
+button{transition:transform .12s ease,box-shadow .2s ease,background .2s ease}
+button:active:not(:disabled){transform:scale(0.97)}
+input:focus,select:focus,textarea:focus{outline:none;border-color:#B5301F !important;box-shadow:0 0 0 3px rgba(181,48,31,0.12)}
+.serif{font-family:'Noto Serif TC','Songti TC','PMingLiU',serif}
+.brand-zh{
+  font-family:'Noto Serif TC','Songti TC','PMingLiU',serif;
+  font-weight:900;font-size:36px;letter-spacing:12px;padding-left:12px;
+  color:#FFF6E3;text-shadow:0 2px 0 rgba(0,0,0,0.18);line-height:1.2;
+}
+.brand-en{
+  font-family:'Playfair Display',Georgia,serif;font-style:italic;
+  font-size:13px;letter-spacing:7px;padding-left:7px;color:#F3D9A0;margin-top:2px;
+}
+.brand-tag{font-size:11px;color:rgba(255,246,227,0.85);margin-top:8px;letter-spacing:2px}
+.ttl{
+  font-family:'Noto Serif TC','Songti TC','PMingLiU',serif;
+  font-weight:700;font-size:20px;letter-spacing:2px;color:#2C1A0E;
+  display:flex;align-items:center;gap:10px;margin-bottom:18px;
+}
+.ttl::before{content:"";display:inline-block;width:5px;height:22px;background:#B5301F;border-radius:3px}
+.cat{
+  font-family:'Noto Serif TC','Songti TC','PMingLiU',serif;
+  font-weight:700;font-size:14px;letter-spacing:1px;color:#B5301F;
+  border-bottom:1.5px solid #E8D5B7;padding-bottom:6px;margin-bottom:10px;
+}
+</style>
 </head>
 <body>
 <div id="root"></div>
@@ -86,7 +125,9 @@ const ALL=MENU.flatMap(c=>c.items);
 // 滷肉飯固定 R75，忽略 Firebase 的覆蓋價格
 const LOCKED_PRICES={a6:75};
 const getPrice=(i,ovr)=>LOCKED_PRICES[i.id]!==undefined?LOCKED_PRICES[i.id]:(ovr&&ovr.price!==undefined?ovr.price:i.price);
-const RED="#C0392B",DARK="#2C1A0E",BORDER="#E8D5B7",NAVY="#2C3E50";
+const RED="#B5301F",DARK="#2C1A0E",BORDER="#E8D5B7",NAVY="#2C3E50",GOLD="#C9A24B";
+const CARD_SHADOW="0 2px 8px rgba(90,50,20,0.08)";
+const BTN_SHADOW="0 3px 10px rgba(181,48,31,0.28)";
 const WA="27791325590",WAGROUP="FoKtpmRCv4rKgYpGOph73x";
 // PIN 經過簡單編碼，避免一眼就被看到（注意：前端密碼無法完全防破解）
 const PIN=(()=>{try{return atob("OTA4ODg=");}catch(e){return "90888";}})();
@@ -150,6 +191,10 @@ function loadSoldOut(){return JSON.parse(localStorage.getItem("jw_soldOut")||"{}
 function saveSoldOut(so){localStorage.setItem("jw_soldOut",JSON.stringify(so));}
 
 // 營業時間：週一至週六 10:30–19:00，週日公休
+function isOpenNow(){
+  const n=new Date(),day=n.getDay(),m=n.getHours()*60+n.getMinutes();
+  return day!==0&&m>=10*60+30&&m<19*60;
+}
 function getDates(){
   const d=[];
   const now=new Date();
@@ -440,6 +485,7 @@ function App(){
   const [copied,setCopied]=useState(false);
   const [ordNo,setOrdNo]=useState("");
   const [submittedTxt,setSubmittedTxt]=useState(""); // step 5 用的訂單文字（提交時凍結）
+  const [submitting,setSubmitting]=useState(false); // 防止重複提交
   const [pForm,setPForm]=useState({type:"order_discount",label:"",pct:"",itemId:"",addonName:"",addonPrice:""});
   const [distance,setDistance]=useState("");
   const [eftProof,setEftProof]=useState("");
@@ -620,8 +666,6 @@ function App(){
       disc>0?`折扣：-R${disc}`:null,
       `💰 合計 Total：R${total}`,
       note?`📝 ${note}`:null,
-      "",
-      "👥 請轉發到管理群組 / Please forward to management group",
     ].filter(Boolean).join("\n");
   };
   const isInWeChat=()=>/micromessenger/i.test(navigator.userAgent);
@@ -632,6 +676,9 @@ function App(){
     return /micromessenger|FBAN|FBAV|Instagram|Line\/|LinkedInApp|Twitter/i.test(ua);
   };
   const sendWA=async ()=>{
+    if(submitting)return; // 防止連點造成重複訂單
+    setSubmitting(true);
+
     // 用今天的本地日期作為 key（例如 "2026-06-09"）
     const today=new Date();
     const todayKey=`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
@@ -679,6 +726,7 @@ function App(){
     // 凍結訂單文字給 step 5 使用（避免 reset 後文字消失）
     const frozenTxt=orderTxt().replace(/#\d+/, "#"+realOrdNo);
     setSubmittedTxt(frozenTxt);
+    const waUrl=`https://wa.me/${WA}?text=${encodeURIComponent(frozenTxt)}`;
     
     // 建立訂單物件（dateKey 是分組關鍵）
     const newOrder={
@@ -704,23 +752,28 @@ function App(){
     };
     
     // 存到 Firebase（用 push 確保 key 絕對唯一）
+    let savePromise=Promise.resolve();
     if(window.fbDb){
       const newRef=window.fbDb.ref("orders").push();
-      newRef.set(newOrder).catch(err=>{
+      savePromise=newRef.set(newOrder).catch(err=>{
         console.error("❌ Firebase 存訂單失敗:", err.message);
         alert("⚠️ 訂單上傳失敗，請截圖並通知店家\n"+err.message);
       });
     }
+    // 等訂單寫入 Firebase 完成（最多等 3 秒，避免網路慢時卡住）
+    await Promise.race([savePromise,new Promise(r=>setTimeout(r,3000))]);
     
-    // 跳到 step 5（提交完成頁面）
+    // 跳到 step 5（提交完成頁面），然後自動開啟 WhatsApp 送出訂單
+    setSubmitting(false);
     setStep(5);
+    setTimeout(()=>{window.location.href=waUrl;},400);
   };
   const copy=()=>{
     const txt=orderTxt();
     if(navigator.clipboard){navigator.clipboard.writeText(txt).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2500);});}
     else{const t=document.createElement("textarea");t.value=txt;document.body.appendChild(t);t.select();document.execCommand("copy");document.body.removeChild(t);setCopied(true);setTimeout(()=>setCopied(false),2500);}
   };
-  const reset=()=>{nRef.current="";phRef.current="";adRef.current="";noRef.current="";setStep(1);setNameVal("");setPhoneVal("");setCart({});setAddonQty({});setPickup("外帶");setAddr("");setPay("現金");setSelDate(null);setTime("");setNote("");setCopied(false);setOrdNo("");setDistance("");setEftProof("");setEftProofFile(null);setSubmittedTxt("");};
+  const reset=()=>{nRef.current="";phRef.current="";adRef.current="";noRef.current="";setStep(1);setNameVal("");setPhoneVal("");setCart({});setAddonQty({});setPickup("外帶");setAddr("");setPay("現金");setSelDate(null);setTime("");setNote("");setCopied(false);setOrdNo("");setDistance("");setEftProof("");setEftProofFile(null);setSubmittedTxt("");setSubmitting(false);};
   const addPromo=()=>{
     if(!pForm.label){alert("⚠️ 請輸入促銷名稱");return;}
     if(pForm.type!=="addon"&&!pForm.pct){alert("⚠️ 請輸入折扣 %");return;}
@@ -738,29 +791,31 @@ function App(){
     alert("✅ 促銷已新增");
   };
 
-  const IS={width:"100%",padding:"10px 12px",borderRadius:8,border:`1.5px solid ${BORDER}`,fontSize:16,background:"#fff",color:DARK,marginTop:6};
-  const Lbl=({t})=><div style={{fontSize:12,color:"#777",marginTop:14,marginBottom:2}}>{t}</div>;
-  const SBtn=({label,active,onClick})=><button onClick={onClick} style={{flex:1,padding:"10px 6px",borderRadius:8,fontSize:12,border:`2px solid ${active?RED:BORDER}`,background:active?"#FDF0EE":"#fff",color:active?RED:DARK,fontWeight:active?500:400,cursor:"pointer",lineHeight:1.4,textAlign:"center"}}>{label}</button>;
+  const IS={width:"100%",padding:"11px 12px",borderRadius:10,border:`1.5px solid ${BORDER}`,fontSize:16,background:"#fff",color:DARK,marginTop:6};
+  const Lbl=({t})=><div style={{fontSize:12,color:"#8A7560",marginTop:14,marginBottom:2,letterSpacing:0.5}}>{t}</div>;
+  const SBtn=({label,active,onClick})=><button onClick={onClick} style={{flex:1,padding:"11px 6px",borderRadius:10,fontSize:12,border:`2px solid ${active?RED:BORDER}`,background:active?"#FDF0EE":"#fff",color:active?RED:DARK,fontWeight:active?700:400,cursor:"pointer",lineHeight:1.4,textAlign:"center"}}>{label}</button>;
   const Row=({label,val})=><div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}><span style={{fontSize:12,color:"#888"}}>{label}</span><span style={{fontSize:13,maxWidth:"60%",textAlign:"right"}}>{val}</span></div>;
 
   const TopBar=({gear})=>(
-    <div style={{background:RED,padding:"16px 20px 12px",textAlign:"center",position:"relative"}}>
-      <div style={{fontSize:20,fontWeight:500,color:"#fff",letterSpacing:2}}>🏮 江味齋 JiangWay</div>
-      <div style={{fontSize:11,color:"rgba(255,255,255,0.85)",marginTop:2}}>32 Wessel Rd, Edenburg, Rivonia</div>
-      {gear&&<button onClick={()=>setMode("pinentry")} style={{position:"absolute",top:14,right:14,background:"rgba(255,255,255,0.2)",border:"none",borderRadius:6,padding:"6px 10px",color:"#fff",fontSize:11,cursor:"pointer"}}>⚙️</button>}
+    <div style={{background:"linear-gradient(160deg,#8E2416 0%,#B5301F 55%,#C0392B 100%)",padding:"24px 20px 18px",textAlign:"center",position:"relative",borderBottom:`3px solid ${GOLD}`}}>
+      <div className="brand-zh">江味齋</div>
+      <div className="brand-en">JiangWay</div>
+      <div className="brand-tag">台式家常料理 · Taiwanese Home Kitchen</div>
+      <div style={{fontSize:10,color:"rgba(255,246,227,0.65)",marginTop:4}}>32 Wessel Rd, Edenburg, Rivonia</div>
+      {gear&&<button onClick={()=>setMode("pinentry")} style={{position:"absolute",top:14,right:14,background:"rgba(255,255,255,0.18)",border:"none",borderRadius:8,padding:"6px 10px",color:"#fff",fontSize:12,cursor:"pointer"}}>⚙️</button>}
     </div>
   );
 
   if(mode==="pinentry") return(
-    <div style={{background:"#FDF6EC",minHeight:"100vh"}}>
+    <div style={{minHeight:"100vh"}}>
       <TopBar/>
       <div style={{padding:"40px 24px",maxWidth:360,margin:"0 auto",textAlign:"center"}}>
-        <div style={{fontSize:16,fontWeight:500,marginBottom:8}}>店主登入 Staff Login</div>
+        <div className="serif" style={{fontSize:18,fontWeight:700,marginBottom:8}}>店主登入 Staff Login</div>
         <div style={{fontSize:13,color:"#888",marginBottom:20}}>請輸入5位數密碼 Enter 5-digit PIN</div>
         <input type="password" inputMode="numeric" maxLength={5} defaultValue="" onChange={e=>{pinRef.current=e.target.value;setPinErr(false);}} placeholder="● ● ● ● ●" style={{...IS,textAlign:"center",fontSize:24,letterSpacing:8}}/>
         {pinErr&&<div style={{color:RED,fontSize:13,marginTop:8}}>密碼錯誤 Wrong PIN</div>}
-        <button onClick={tryPin} style={{width:"100%",background:RED,color:"#fff",border:"none",borderRadius:8,padding:"13px",fontSize:14,fontWeight:500,cursor:"pointer",marginTop:16}}>確認 Confirm</button>
-        <button onClick={()=>setMode("customer")} style={{width:"100%",background:"#fff",color:"#888",border:`1.5px solid ${BORDER}`,borderRadius:8,padding:"12px",fontSize:13,cursor:"pointer",marginTop:10}}>取消 Cancel</button>
+        <button onClick={tryPin} style={{width:"100%",background:RED,color:"#fff",border:"none",borderRadius:10,padding:"13px",fontSize:14,fontWeight:500,cursor:"pointer",marginTop:16,boxShadow:BTN_SHADOW}}>確認 Confirm</button>
+        <button onClick={()=>setMode("customer")} style={{width:"100%",background:"#fff",color:"#888",border:`1.5px solid ${BORDER}`,borderRadius:10,padding:"12px",fontSize:13,cursor:"pointer",marginTop:10}}>取消 Cancel</button>
       </div>
     </div>
   );
@@ -1002,60 +1057,66 @@ function App(){
     </div>
   );
 
+  const openNow=isOpenNow();
+
   return(
-    <div style={{background:"#FDF6EC",minHeight:"100vh"}}>
+    <div style={{minHeight:"100vh"}}>
       <TopBar gear/>
-      <div style={{background:RED,paddingBottom:12,display:"flex",justifyContent:"center",gap:6}}>
-        {[1,2,3,4].map(s=><div key={s} style={{width:s===step?24:8,height:8,borderRadius:4,background:s<=step?"#fff":"rgba(255,255,255,0.35)",transition:"width 0.3s"}}/>)}
+      <div style={{background:"#FFF6E3",padding:"12px 0",display:"flex",justifyContent:"center",gap:6,borderBottom:`1px solid ${BORDER}`}}>
+        {[1,2,3,4].map(s=><div key={s} style={{width:s===step?26:8,height:8,borderRadius:4,background:s<=step?RED:BORDER,transition:"width 0.3s"}}/>)}
       </div>
       {activePromos.length>0&&(
         <div style={{background:"#FFF3CD",borderBottom:"2px solid #F0C040",padding:"10px 16px"}}>
           {activePromos.map(p=><div key={p.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:2}}><span>🎉</span><span style={{fontSize:13,fontWeight:500,color:"#7A5800"}}>{p.label}</span><span style={{fontSize:12,color:"#A07000"}}>{p.type==="order_discount"?`整單 ${p.pct}% OFF`:p.type==="item_discount"?`${effectiveAll.find(i=>i.id===p.itemId)?.name} ${p.pct}% OFF`:`加 R${p.addonPrice} 多一份${p.addonName}`}</span></div>)}
         </div>
       )}
-      <div style={{padding:"20px 16px",maxWidth:480,margin:"0 auto"}}>
+      <div style={{padding:"22px 16px 40px",maxWidth:480,margin:"0 auto"}}>
 
         {step===1&&<div>
-          <div style={{background:"#fff",border:`1.5px solid ${BORDER}`,borderRadius:10,padding:"12px 14px",marginBottom:16,fontSize:13,lineHeight:1.8,color:DARK}}>
-            <div style={{fontWeight:500,color:RED,marginBottom:2}}>🕙 營業時間 Opening Hours</div>
-            <div>週一至週六 Mon–Sat：10:30 – 19:00</div>
-            <div>週日公休 Sunday: Closed</div>
+          <div style={{background:"#fff",border:`1px solid ${BORDER}`,borderLeft:`4px solid ${GOLD}`,borderRadius:12,padding:"12px 14px",marginBottom:22,boxShadow:CARD_SHADOW}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+              <div className="cat" style={{border:"none",margin:0,padding:0}}>🕙 營業時間 Opening Hours</div>
+              <span style={{fontSize:11,fontWeight:500,padding:"2px 10px",borderRadius:12,background:openNow?"#E8F5E9":"#EEE",color:openNow?"#27AE60":"#888"}}>{openNow?"營業中 Open":"休息中 Closed"}</span>
+            </div>
+            <div style={{fontSize:13,lineHeight:1.8,color:DARK}}>週一至週六 Mon–Sat：10:30 – 19:00</div>
+            <div style={{fontSize:13,lineHeight:1.8,color:DARK}}>週日公休 Sunday: Closed</div>
           </div>
-          <div style={{fontSize:16,fontWeight:500,marginBottom:16}}>顧客資料 Customer Info</div>
+          <div className="ttl">顧客資料 Customer Info</div>
           <Lbl t="姓名 Name"/><input type="text" defaultValue={nRef.current} onChange={e=>{nRef.current=e.target.value;}} placeholder="請輸入姓名 Enter name" style={IS}/>
           <Lbl t="電話 Contact No.（選填 Optional）"/><input type="tel" defaultValue={phRef.current} onChange={e=>{phRef.current=e.target.value;}} placeholder="+27 82 000 0000" style={IS}/>
-          <button onClick={go2} style={{width:"100%",background:RED,color:"#fff",border:"none",borderRadius:8,padding:"13px",fontSize:14,fontWeight:500,cursor:"pointer",marginTop:20}}>下一步 Next →</button>
+          <button onClick={go2} style={{width:"100%",background:RED,color:"#fff",border:"none",borderRadius:10,padding:"14px",fontSize:15,fontWeight:500,cursor:"pointer",marginTop:24,boxShadow:BTN_SHADOW,letterSpacing:1}}>下一步 Next →</button>
         </div>}
 
         {step===2&&<div>
-          <div style={{fontSize:16,fontWeight:500,marginBottom:16}}>選擇餐點 Select Items</div>
+          <div className="ttl">選擇餐點 Select Items</div>
           {effectiveMenu.map(cat=>(
-            <div key={cat.cat} style={{marginBottom:20}}>
-              <div style={{fontSize:12,fontWeight:500,color:RED,marginBottom:8,borderBottom:`1px solid ${BORDER}`,paddingBottom:4}}>{cat.cat}</div>
+            <div key={cat.cat} style={{marginBottom:22}}>
+              <div className="cat">{cat.cat}</div>
               {cat.items.map(item=>{
                 const out=soldOut[item.id];
                 const ip=promos.find(p=>p.active&&p.type==="item_discount"&&p.itemId===item.id);
                 const dp=ip?Math.round(item.price*(1-ip.pct/100)):null;
                 return(
-                  <div key={item.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 0",borderBottom:`0.5px solid ${BORDER}`,opacity:out?0.45:1}}>
+                  <div key={item.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 14px",marginBottom:8,background:"#fff",borderRadius:12,border:`1.5px solid ${qty(item.id)?RED:BORDER}`,boxShadow:"0 1px 4px rgba(90,50,20,0.06)",opacity:out?0.45:1}}>
                     <div style={{flex:1,paddingRight:8}}>
                       <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-                        <span style={{fontSize:14,fontWeight:qty(item.id)?500:400,textDecoration:out?"line-through":"none",color:out?"#aaa":DARK}}>{item.name}</span>
+                        <span style={{fontSize:15,fontWeight:qty(item.id)?700:500,textDecoration:out?"line-through":"none",color:out?"#aaa":DARK}}>{item.name}</span>
                         {out&&<span style={{fontSize:10,background:"#fee",color:RED,borderRadius:4,padding:"1px 6px",fontWeight:500}}>售完 Sold Out</span>}
                         {ip&&!out&&<span style={{fontSize:10,background:"#FFF3CD",color:"#7A5800",borderRadius:4,padding:"1px 6px",fontWeight:500}}>-{ip.pct}% OFF</span>}
                       </div>
-                      <div style={{fontSize:11,color:"#888"}}>{item.nameEn} · {dp?<span><span style={{textDecoration:"line-through",color:"#bbb"}}>R{item.price}</span> <span style={{color:RED,fontWeight:500}}>R{dp}</span></span>:<span>R{item.price}</span>}</div>
+                      <div style={{fontSize:11,color:"#8A7560",marginTop:2}}>{item.nameEn}</div>
+                      <div style={{fontSize:14,marginTop:3,fontWeight:700,color:RED}}>{dp?<span><span style={{textDecoration:"line-through",color:"#bbb",fontWeight:400,fontSize:12}}>R{item.price}</span> R{dp}</span>:<span>R{item.price}</span>}</div>
                     </div>
                     <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-                      {!out&&qty(item.id)>0&&<><button onClick={()=>adj(item.id,-1)} style={{width:32,height:32,borderRadius:16,border:`1.5px solid ${RED}`,background:"#fff",color:RED,fontSize:20,cursor:"pointer",lineHeight:1}}>−</button><span style={{fontSize:15,fontWeight:500,minWidth:20,textAlign:"center"}}>{qty(item.id)}</span></>}
-                      {!out&&<button onClick={()=>adj(item.id,1)} style={{width:32,height:32,borderRadius:16,border:`1.5px solid ${RED}`,background:qty(item.id)?RED:"#fff",color:qty(item.id)?"#fff":RED,fontSize:20,cursor:"pointer",lineHeight:1}}>+</button>}
+                      {!out&&qty(item.id)>0&&<><button onClick={()=>adj(item.id,-1)} style={{width:34,height:34,borderRadius:17,border:`1.5px solid ${RED}`,background:"#fff",color:RED,fontSize:20,cursor:"pointer",lineHeight:1}}>−</button><span style={{fontSize:15,fontWeight:700,minWidth:20,textAlign:"center"}}>{qty(item.id)}</span></>}
+                      {!out&&<button onClick={()=>adj(item.id,1)} style={{width:34,height:34,borderRadius:17,border:`1.5px solid ${RED}`,background:qty(item.id)?RED:"#fff",color:qty(item.id)?"#fff":RED,fontSize:20,cursor:"pointer",lineHeight:1}}>+</button>}
                     </div>
                   </div>
                 );
               })}
             </div>
           ))}
-          {addonList.length>0&&cartItems.length>0&&<div style={{background:"#FFF3CD",border:"1.5px solid #F0C040",borderRadius:10,padding:"12px 14px",marginBottom:12}}>
+          {addonList.length>0&&cartItems.length>0&&<div style={{background:"#FFF3CD",border:"1.5px solid #F0C040",borderRadius:12,padding:"12px 14px",marginBottom:12}}>
             <div style={{fontSize:13,fontWeight:500,color:"#7A5800",marginBottom:8}}>🎉 加價購 Add-on</div>
             {addonList.map(p=>(
               <div key={p.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
@@ -1067,18 +1128,18 @@ function App(){
               </div>
             ))}
           </div>}
-          {cartItems.length>0&&<div style={{background:"#fff",border:`1.5px solid ${RED}`,borderRadius:10,padding:"12px 14px",marginBottom:12}}>
-            <div style={{fontSize:13,color:RED,fontWeight:500,marginBottom:4}}>已選 {cartItems.length} 項 · 小計 R{sub}{disc>0?` → 折後 R${total}`:""}</div>
+          {cartItems.length>0&&<div style={{background:"#fff",border:`1.5px solid ${RED}`,borderRadius:12,padding:"12px 14px",marginBottom:12,boxShadow:CARD_SHADOW}}>
+            <div style={{fontSize:13,color:RED,fontWeight:700,marginBottom:4}}>已選 {cartItems.length} 項 · 小計 R{sub}{disc>0?` → 折後 R${total}`:""}</div>
             {belowMin&&<div style={{fontSize:12,color:"#E67E22",marginTop:4}}>⚠️ 最低消費 R{minOrder}，還差 R{minOrder-sub}</div>}
           </div>}
           <div style={{display:"flex",gap:10}}>
-            <button onClick={()=>setStep(1)} style={{padding:"12px 18px",borderRadius:8,border:`1.5px solid ${BORDER}`,background:"#fff",color:DARK,fontSize:13,cursor:"pointer"}}>← 返回 Back</button>
-            <button onClick={()=>setStep(3)} disabled={cartItems.length===0||belowMin} style={{background:(cartItems.length===0||belowMin)?"#ccc":RED,color:"#fff",border:"none",borderRadius:8,padding:"12px 24px",fontSize:14,fontWeight:500,cursor:(cartItems.length===0||belowMin)?"not-allowed":"pointer",marginTop:8}}>下一步 Next →</button>
+            <button onClick={()=>setStep(1)} style={{padding:"12px 18px",borderRadius:10,border:`1.5px solid ${BORDER}`,background:"#fff",color:DARK,fontSize:13,cursor:"pointer"}}>← 返回 Back</button>
+            <button onClick={()=>setStep(3)} disabled={cartItems.length===0||belowMin} style={{background:(cartItems.length===0||belowMin)?"#ccc":RED,color:"#fff",border:"none",borderRadius:10,padding:"12px 24px",fontSize:14,fontWeight:500,cursor:(cartItems.length===0||belowMin)?"not-allowed":"pointer",marginTop:8,boxShadow:(cartItems.length===0||belowMin)?"none":BTN_SHADOW}}>下一步 Next →</button>
           </div>
         </div>}
 
         {step===3&&<div>
-          <div style={{fontSize:16,fontWeight:500,marginBottom:16}}>取餐與付款 Pickup & Payment</div>
+          <div className="ttl">取餐與付款 Pickup & Payment</div>
           <Lbl t="取餐方式 Pickup Method"/>
           <div style={{display:"flex",gap:8,marginTop:6}}>
             <SBtn label="外帶 Takeaway" active={pickup==="外帶"} onClick={()=>setPickup("外帶")}/>
@@ -1086,7 +1147,7 @@ function App(){
             <SBtn label="內用 Dine-in" active={pickup==="內用"} onClick={()=>setPickup("內用")}/>
           </div>
           {pickup==="外送"&&<>
-            <div style={{background:"#FFF8F0",border:`1px solid ${BORDER}`,borderRadius:8,padding:"10px 12px",marginTop:10,fontSize:12,color:"#7A4A00",lineHeight:1.7}}>
+            <div style={{background:"#FFF8F0",border:`1px solid ${BORDER}`,borderRadius:10,padding:"10px 12px",marginTop:10,fontSize:12,color:"#7A4A00",lineHeight:1.7}}>
               🛵 免費外送 Free Delivery：金額滿R1500且距離5KM內<br/>
               <span style={{color:"#999"}}>Free delivery for orders ≥R1500 within 5km radius</span>
               {totalBeforeDelivFee>0&&totalBeforeDelivFee<1500&&<><br/><span style={{color:RED}}>💰 還差 R{Math.max(0, 1500-totalBeforeDelivFee)} 就符合免費外送</span></>}
@@ -1100,7 +1161,7 @@ function App(){
           <Lbl t={pickup==="內用"?"預計用餐日期 Dining Date":"預計取餐日期 Pickup Date"}/>
           <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:4,marginTop:6}}>
             {dates.map(d=>{const active=selDate&&fmtKey(d)===fmtKey(selDate);return(
-              <button key={fmtKey(d)} onClick={()=>{setSelDate(d);setTime("");}} style={{flexShrink:0,padding:"8px 12px",borderRadius:8,border:`2px solid ${active?RED:BORDER}`,background:active?"#FDF0EE":"#fff",color:active?RED:DARK,fontSize:11,cursor:"pointer",lineHeight:1.4}}>{isToday(d)?"今天 Today":fmtDate(d)}</button>
+              <button key={fmtKey(d)} onClick={()=>{setSelDate(d);setTime("");}} style={{flexShrink:0,padding:"8px 12px",borderRadius:10,border:`2px solid ${active?RED:BORDER}`,background:active?"#FDF0EE":"#fff",color:active?RED:DARK,fontSize:11,cursor:"pointer",lineHeight:1.4,fontWeight:active?700:400}}>{isToday(d)?"今天 Today":fmtDate(d)}</button>
             );})}
           </div>
           {selDate&&<><Lbl t={pickup==="內用"?"預計用餐時間 Dining Time":"預計取餐時間 Pickup Time"}/><select value={time} onChange={e=>setTime(e.target.value)} style={{...IS,color:time?DARK:"#999",fontSize:14}}><option value="">請選擇時間 Select time</option>{slots.map(t=><option key={t} value={t}>{t}</option>)}</select></>}
@@ -1110,7 +1171,7 @@ function App(){
             <SBtn label="EFT" active={pay==="EFT"} onClick={()=>setPay("EFT")}/>
             <SBtn label="餐券 Voucher" active={pay==="餐券"} onClick={()=>setPay("餐券")}/>
           </div>
-          {pay==="EFT"&&<div style={{background:"#F0F7FF",border:"1.5px solid #B5D4F4",borderRadius:10,padding:"12px 14px",marginTop:10}}>
+          {pay==="EFT"&&<div style={{background:"#F0F7FF",border:"1.5px solid #B5D4F4",borderRadius:12,padding:"12px 14px",marginTop:10}}>
             <div style={{fontSize:13,fontWeight:500,color:"#0C447C",marginBottom:8}}>🏦 EFT Banking Details</div>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{fontSize:12,color:"#555"}}>Bank</span><span style={{fontSize:13,fontWeight:500,color:"#0C447C"}}>Capitec Business</span></div>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{fontSize:12,color:"#555"}}>Acc Name</span><span style={{fontSize:13,fontWeight:500,color:"#0C447C"}}>Intelage Trading cc</span></div>
@@ -1131,17 +1192,17 @@ function App(){
           </div>}
           <Lbl t="備註 Remarks（選填 Optional）"/><textarea defaultValue={noRef.current} onChange={e=>{noRef.current=e.target.value;}} placeholder="例：不要辣、少油... e.g. No spicy" style={{...IS,minHeight:68,resize:"vertical"}}/>
           <div style={{display:"flex",gap:10,marginTop:16}}>
-            <button onClick={()=>setStep(2)} style={{padding:"12px 18px",borderRadius:8,border:`1.5px solid ${BORDER}`,background:"#fff",color:DARK,fontSize:13,cursor:"pointer"}}>← 返回 Back</button>
-            <button onClick={go4} style={{background:RED,color:"#fff",border:"none",borderRadius:8,padding:"12px 24px",fontSize:14,fontWeight:500,cursor:"pointer",marginTop:8}}>確認訂單 Confirm →</button>
+            <button onClick={()=>setStep(2)} style={{padding:"12px 18px",borderRadius:10,border:`1.5px solid ${BORDER}`,background:"#fff",color:DARK,fontSize:13,cursor:"pointer"}}>← 返回 Back</button>
+            <button onClick={go4} style={{background:RED,color:"#fff",border:"none",borderRadius:10,padding:"12px 24px",fontSize:14,fontWeight:500,cursor:"pointer",marginTop:8,boxShadow:BTN_SHADOW}}>確認訂單 Confirm →</button>
           </div>
         </div>}
 
         {step===4&&<div>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
-            <div style={{fontSize:16,fontWeight:500}}>訂單確認 Order Summary</div>
+            <div className="ttl" style={{marginBottom:0}}>訂單確認 Order Summary</div>
             <div style={{background:RED,color:"#fff",borderRadius:6,padding:"3px 10px",fontSize:13,fontWeight:500}}>#{ordNo}</div>
           </div>
-          <div style={{background:"#fff",border:`1.5px solid ${BORDER}`,borderRadius:12,padding:"16px 14px",marginBottom:16}}>
+          <div style={{background:"#fff",border:`1.5px solid ${BORDER}`,borderRadius:14,padding:"16px 14px",marginBottom:16,boxShadow:CARD_SHADOW}}>
             <Row label="顧客 Customer" val={`${nameVal}${phoneVal?` · ${phoneVal}`:""}`}/>
             <Row label="取餐 Pickup" val={`${pickLbl()}${pickup==="外送"&&addr?`：${addr}`:""}`}/>
             {pickup==="外送"&&distance&&<Row label="距離 Distance" val={`${distance} km`}/>}
@@ -1167,50 +1228,51 @@ function App(){
               {isFreeDelivery&&pickup==="外送"&&<div style={{display:"flex",justifyContent:"space-between",marginBottom:4,color:"#27AE60"}}><span style={{fontSize:12}}>✨ 免費外送</span><span style={{fontSize:13,fontWeight:500}}>-R0</span></div>}
               <div style={{borderTop:`1px solid ${BORDER}`,marginTop:8,paddingTop:8}}>
                 {disc>0&&<div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:13,color:"#888"}}>小計</span><span style={{fontSize:13,color:"#888",textDecoration:"line-through"}}>R{sub}</span></div>}
-                <div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:15,fontWeight:500}}>合計 Total</span><span style={{fontSize:16,fontWeight:500,color:RED}}>R{total}</span></div>
+                <div style={{display:"flex",justifyContent:"space-between"}}><span className="serif" style={{fontSize:16,fontWeight:700}}>合計 Total</span><span style={{fontSize:18,fontWeight:700,color:RED}}>R{total}</span></div>
               </div>
             </div>
             {note&&<div style={{marginTop:10,fontSize:12,color:"#666",borderTop:`1px solid ${BORDER}`,paddingTop:8}}>備註：{note}</div>}
           </div>
-          <div style={{background:"#F5F5F5",borderRadius:10,padding:"12px 14px",marginBottom:14,fontFamily:"monospace",fontSize:12,whiteSpace:"pre-wrap",color:DARK,lineHeight:1.7}}>{orderTxt()}</div>
-          <button onClick={sendWA} style={{width:"100%",padding:"13px",borderRadius:8,border:"none",background:"#25D366",color:"#fff",fontSize:14,fontWeight:500,cursor:"pointer",marginBottom:10}}>✓ 提交 Submit</button>
-          <button onClick={copy} style={{width:"100%",padding:"12px",borderRadius:8,border:`2px solid ${copied?"#27AE60":RED}`,background:copied?"#27AE60":"#fff",color:copied?"#fff":RED,fontSize:13,fontWeight:500,cursor:"pointer",marginBottom:10}}>{copied?"✓ 已複製！Copied!":"複製訂單文字 Copy Text"}</button>
-          <button onClick={reset} style={{width:"100%",padding:"12px",borderRadius:8,border:`1.5px solid ${BORDER}`,background:"#fff",color:"#888",fontSize:13,cursor:"pointer"}}>+ 新增訂單 New Order</button>
+          <div style={{background:"#F5F5F5",borderRadius:12,padding:"12px 14px",marginBottom:14,fontFamily:"monospace",fontSize:12,whiteSpace:"pre-wrap",color:DARK,lineHeight:1.7}}>{orderTxt()}</div>
+          <button onClick={sendWA} disabled={submitting} style={{width:"100%",padding:"14px",borderRadius:10,border:"none",background:submitting?"#9BDDB5":"#25D366",color:"#fff",fontSize:15,fontWeight:700,cursor:submitting?"not-allowed":"pointer",marginBottom:6,boxShadow:submitting?"none":"0 3px 10px rgba(37,211,102,0.3)"}}>{submitting?"處理中… Processing…":"✓ 提交並傳送 WhatsApp"}</button>
+          <div style={{fontSize:11,color:"#8A7560",textAlign:"center",marginBottom:12}}>提交後會自動開啟 WhatsApp，請按「傳送」完成下單<br/>After submitting, WhatsApp will open — tap Send to complete your order</div>
+          <button onClick={copy} style={{width:"100%",padding:"12px",borderRadius:10,border:`2px solid ${copied?"#27AE60":RED}`,background:copied?"#27AE60":"#fff",color:copied?"#fff":RED,fontSize:13,fontWeight:500,cursor:"pointer",marginBottom:10}}>{copied?"✓ 已複製！Copied!":"複製訂單文字 Copy Text"}</button>
+          <button onClick={reset} style={{width:"100%",padding:"12px",borderRadius:10,border:`1.5px solid ${BORDER}`,background:"#fff",color:"#888",fontSize:13,cursor:"pointer"}}>+ 新增訂單 New Order</button>
         </div>}
         {step===5&&<div>
           <div style={{textAlign:"center",marginBottom:24}}>
             <div style={{fontSize:48,marginBottom:8}}>✅</div>
-            <div style={{fontSize:20,fontWeight:500,color:"#27AE60",marginBottom:6}}>訂單已提交！</div>
+            <div className="serif" style={{fontSize:22,fontWeight:700,color:"#27AE60",marginBottom:6}}>訂單已提交！</div>
             <div style={{fontSize:14,color:"#27AE60",marginBottom:14}}>Order Submitted!</div>
             <div style={{background:RED,color:"#fff",borderRadius:8,padding:"8px 16px",fontSize:15,fontWeight:500,display:"inline-block"}}>訂單編號 #{ordNo}</div>
           </div>
           
-          <div style={{background:"#FFF9E6",border:`2px solid #F39C12`,borderRadius:12,padding:"16px",marginBottom:16}}>
-            <div style={{fontSize:14,fontWeight:500,color:"#7A5800",marginBottom:8}}>⚠️ 重要：請通知店家 Notify the Restaurant</div>
-            <div style={{fontSize:12,color:"#7A5800",lineHeight:1.6,marginBottom:10}}>訂單已記錄到系統，但<strong>請務必按下方按鈕通知店家</strong>，否則我們不會開始準備您的餐點。</div>
-            <div style={{fontSize:12,color:"#7A5800",lineHeight:1.6}}>Your order is in our system, but <strong>please tap the button below to notify us</strong>, otherwise we won't start preparing.</div>
+          <div style={{background:"#FFF9E6",border:`2px solid #F39C12`,borderRadius:14,padding:"16px",marginBottom:16}}>
+            <div style={{fontSize:14,fontWeight:700,color:"#7A5800",marginBottom:8}}>📱 正在開啟 WhatsApp… Opening WhatsApp…</div>
+            <div style={{fontSize:12,color:"#7A5800",lineHeight:1.6,marginBottom:10}}>請在 WhatsApp 裡按<strong>「傳送」</strong>把訂單送給店家，我們收到後才會開始準備您的餐點。</div>
+            <div style={{fontSize:12,color:"#7A5800",lineHeight:1.6}}>Please tap <strong>Send</strong> in WhatsApp to deliver your order to us. We will start preparing once we receive it.</div>
           </div>
           
-          {/* WhatsApp 按鈕 - 用 <a> 標籤確保跳轉 */}
+          {/* 如果沒有自動跳轉，可以手動按這個按鈕 */}
           <a 
             href={`https://wa.me/${WA}?text=${encodeURIComponent(submittedTxt||orderTxt().replace(/#\d+/, "#"+ordNo))}`}
             style={{
               display:"block",
               width:"100%",
               padding:"16px",
-              borderRadius:10,
+              borderRadius:12,
               background:"#25D366",
               color:"#fff",
               fontSize:16,
-              fontWeight:500,
+              fontWeight:700,
               textAlign:"center",
               textDecoration:"none",
               marginBottom:12,
-              boxShadow:"0 2px 8px rgba(37,211,102,0.3)"
+              boxShadow:"0 3px 10px rgba(37,211,102,0.3)"
             }}
           >
-            📱 打開 WhatsApp 通知店家
-            <div style={{fontSize:12,marginTop:4,opacity:0.9}}>Open WhatsApp to Notify</div>
+            📱 沒有跳轉？點此打開 WhatsApp
+            <div style={{fontSize:12,marginTop:4,opacity:0.9,fontWeight:400}}>Not redirected? Tap to open WhatsApp</div>
           </a>
           
           {/* 備案：複製訂單文字 */}
@@ -1230,19 +1292,19 @@ function App(){
                 setTimeout(()=>setCopied(false),2500);
               }
             }} 
-            style={{width:"100%",padding:"12px",borderRadius:8,border:`2px solid ${copied?"#27AE60":"#888"}`,background:copied?"#27AE60":"#fff",color:copied?"#fff":"#666",fontSize:13,fontWeight:500,cursor:"pointer",marginBottom:10}}
+            style={{width:"100%",padding:"12px",borderRadius:10,border:`2px solid ${copied?"#27AE60":"#888"}`,background:copied?"#27AE60":"#fff",color:copied?"#fff":"#666",fontSize:13,fontWeight:500,cursor:"pointer",marginBottom:10}}
           >
             {copied?"✓ 已複製！可以手動貼到 WhatsApp":"📋 或：複製訂單文字（手動貼到 WhatsApp）"}
           </button>
           
-          {isInAppBrowser()&&<div style={{background:"#FFE8E8",border:`1px solid ${RED}`,borderRadius:8,padding:"10px 12px",marginBottom:12,fontSize:12,color:RED,lineHeight:1.5}}>
-            ⚠️ 偵測到您在 App 內建瀏覽器（如 WeChat、Facebook、Instagram、Line）。如果按鈕無法跳轉到 WhatsApp，請：<br/>
+          {isInAppBrowser()&&<div style={{background:"#FFE8E8",border:`1px solid ${RED}`,borderRadius:10,padding:"10px 12px",marginBottom:12,fontSize:12,color:RED,lineHeight:1.5}}>
+            ⚠️ 偵測到您在 App 內建瀏覽器（如 WeChat、Facebook、Instagram、Line）。如果沒有自動跳轉到 WhatsApp，請：<br/>
             1. 點上方「📋 複製訂單文字」<br/>
             2. 打開 WhatsApp 搜尋「江味齋」<br/>
             3. 長按輸入框→貼上→發送
           </div>}
           
-          <button onClick={reset} style={{width:"100%",padding:"12px",borderRadius:8,border:`1.5px solid ${BORDER}`,background:"#fff",color:"#888",fontSize:13,cursor:"pointer",marginTop:10}}>+ 新增訂單 New Order</button>
+          <button onClick={reset} style={{width:"100%",padding:"12px",borderRadius:10,border:`1.5px solid ${BORDER}`,background:"#fff",color:"#888",fontSize:13,cursor:"pointer",marginTop:10}}>+ 新增訂單 New Order</button>
         </div>}
       </div>
     </div>
