@@ -26,13 +26,12 @@ const firebaseConfig = {
   databaseURL: "https://jiangway-bk-end-management-default-rtdb.asia-southeast1.firebasedatabase.app",
   projectId: "jiangway-bk-end-management"
 };
-
 try {
   firebase.initializeApp(firebaseConfig);
   window.fbDb = firebase.database();
   console.log("✅ Firebase 已連接");
-} catch(e) {
-  console.error("⚠️ Firebase 初始化失敗:", e.message);
+} catch(err) {
+  console.error("⚠️ Firebase 初始化失敗:", err.message);
   window.fbDb = null;
 }
 </script>
@@ -60,6 +59,8 @@ const MENU=[
     {id:"a7",name:"鹽酥雞",nameEn:"Popcorn Chicken",price:90},
     {id:"a8",name:"刷醬雞排",nameEn:"Brushed Sauce Chicken Cutlet",price:90},
     {id:"a9",name:"蜜汁雞排",nameEn:"Honey Glazed Chicken Cutlet",price:90},
+    {id:"a10",name:"炒青菜",nameEn:"Stir-fried Vegetables",price:50},
+    {id:"a11",name:"肉羹湯",nameEn:"Pork Thick Soup",price:100},
   ]},
   {cat:"麵類 NOODLE",items:[
     {id:"n1",name:"肉羹麵",nameEn:"Pork Thick Soup Noodle",price:130},
@@ -82,6 +83,9 @@ const MENU=[
   ]},
 ];
 const ALL=MENU.flatMap(c=>c.items);
+// 滷肉飯固定 R75，忽略 Firebase 的覆蓋價格
+const LOCKED_PRICES={a6:75};
+const getPrice=(i,ovr)=>LOCKED_PRICES[i.id]!==undefined?LOCKED_PRICES[i.id]:(ovr&&ovr.price!==undefined?ovr.price:i.price);
 const RED="#C0392B",DARK="#2C1A0E",BORDER="#E8D5B7",NAVY="#2C3E50";
 const WA="27791325590",WAGROUP="FoKtpmRCv4rKgYpGOph73x";
 // PIN 經過簡單編碼，避免一眼就被看到（注意：前端密碼無法完全防破解）
@@ -137,9 +141,6 @@ function getNo(){
 }
 function saveOrd(o){
   // 完全禁用本地保存
-  // const l=JSON.parse(localStorage.getItem("jw_orders")||"[]");
-  // l.unshift(o);
-  // localStorage.setItem("jw_orders",JSON.stringify(l.slice(0,100)));
 }
 function loadOrds(){
   // 不讀本地 localStorage，只讀 Firebase
@@ -148,13 +149,14 @@ function loadOrds(){
 function loadSoldOut(){return JSON.parse(localStorage.getItem("jw_soldOut")||"{}");}
 function saveSoldOut(so){localStorage.setItem("jw_soldOut",JSON.stringify(so));}
 
+// 營業時間：週一至週六 10:30–19:00，週日公休
 function getDates(){
   const d=[];
   const now=new Date();
   // 正規化到當天中午 12:00（避免午夜時區/DST 邊界造成跳日）
   const cur=new Date(now.getFullYear(),now.getMonth(),now.getDate(),12,0,0,0);
-  while(d.length<14){
-    d.push(new Date(cur));
+  while(d.length<12){
+    if(cur.getDay()!==0)d.push(new Date(cur)); // 跳過週日
     cur.setDate(cur.getDate()+1);
   }
   return d;
@@ -164,13 +166,16 @@ const fmtDate=d=>d.toLocaleDateString("zh-TW",{month:"short",day:"numeric",weekd
 const fmtKey=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 const isToday=d=>fmtKey(d)===fmtKey(new Date());
 function getSlots(dt){
-  // 營業時間：週一到週六 10:00-19:00，週日 10:00-14:00
-  const now=new Date(),day=dt.getDay(),end=day===0?14:19,slots=[],td=isToday(dt);
-  if(td)slots.push("盡快 ASAP");
-  for(let h=10;h<=end;h++)for(const m of[0,15,30,45]){
-    if(h===end&&m>0)continue; // 最後一個小時只到整點
-    if(td){const sd=new Date(now);sd.setHours(h,m,0,0);if(sd<=new Date(now.getTime()+600000))continue;}
-    slots.push(`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`);
+  const now=new Date(),slots=[],td=isToday(dt);
+  if(dt.getDay()===0)return []; // 週日公休
+  const openMin=10*60+30,closeMin=19*60;
+  if(td){
+    const nowMin=now.getHours()*60+now.getMinutes();
+    if(nowMin>=openMin&&nowMin<closeMin)slots.push("盡快 ASAP");
+  }
+  for(let t=openMin;t<=closeMin;t+=15){
+    if(td){const sd=new Date(now);sd.setHours(Math.floor(t/60),t%60,0,0);if(sd<=new Date(now.getTime()+600000))continue;}
+    slots.push(`${String(Math.floor(t/60)).padStart(2,"0")}:${String(t%60).padStart(2,"0")}`);
   }
   return slots;
 }
@@ -531,12 +536,12 @@ function App(){
       if(ovr){
         return {
           ...i,
-          price:ovr.price!==undefined?ovr.price:i.price,
+          price:getPrice(i,ovr),
           name:ovr.name||i.name,
           nameEn:ovr.nameEn||i.nameEn,
         };
       }
-      return i;
+      return {...i,price:getPrice(i,null)};
     }),
     ...customItems.map(c=>({id:c.id,name:c.name,nameEn:c.nameEn,price:c.price,_custom:true,_fbKey:c._fbKey})),
   ];
@@ -546,9 +551,9 @@ function App(){
       items:cat.items.map(i=>{
         const ovr=menuOverrides[i.id];
         if(ovr){
-          return {...i,price:ovr.price!==undefined?ovr.price:i.price,name:ovr.name||i.name,nameEn:ovr.nameEn||i.nameEn};
+          return {...i,price:getPrice(i,ovr),name:ovr.name||i.name,nameEn:ovr.nameEn||i.nameEn};
         }
-        return i;
+        return {...i,price:getPrice(i,null)};
       })
     })),
     ...(customItems.length>0?[{cat:"⭐ 新品 NEW ITEMS",items:customItems.map(c=>({id:c.id,name:c.name,nameEn:c.nameEn,price:c.price,_custom:true,_fbKey:c._fbKey}))}]:[])
@@ -585,7 +590,6 @@ function App(){
   const go4=()=>{
     setAddr(adRef.current);setNote(noRef.current);
     const no=getNo();setOrdNo(no);
-    const o={no,name:nameVal,phone:phoneVal,items:cartItems.map(i=>({name:i.name,qty:qty(i.id),price:i.price})),total,pickup,addr:adRef.current,distance:distance,pay:pay==="現金"?"現金 Cash":pay==="餐券"?"餐券 Voucher":"EFT",eftProofUrl:eftProof,date:selDate?fmtDate(selDate):"",time,note:noRef.current,ts:new Date().toLocaleString("zh-TW")};
     // 不保存到本地或 Firebase，只生成訂單號，等提交時才保存
     setStep(4);
   };
@@ -834,12 +838,14 @@ function App(){
               <div style={{fontSize:11,color:NAVY,marginBottom:6,fontWeight:500}}>{cat.cat}</div>
               {cat.items.map(item=>{
                 const ovr=menuOverrides[item.id]||{};
-                const curPrice=ovr.price!==undefined?ovr.price:item.price;
+                const curPrice=getPrice(item,ovr);
+                const locked=LOCKED_PRICES[item.id]!==undefined;
                 return(
                   <div key={item.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,padding:"6px 8px",background:"#FAFAFA",borderRadius:6}}>
-                    <span style={{flex:1,fontSize:12}}>{item.name}</span>
+                    <span style={{flex:1,fontSize:12}}>{item.name}{locked?" 🔒":""}</span>
                     <span style={{fontSize:11,color:"#888"}}>原 R{item.price}</span>
-                    <input type="number" defaultValue={curPrice} placeholder="新價" style={{width:70,padding:"4px 6px",borderRadius:4,border:`1px solid ${BORDER}`,fontSize:12}} onBlur={e=>{
+                    <input type="number" defaultValue={curPrice} disabled={locked} placeholder="新價" style={{width:70,padding:"4px 6px",borderRadius:4,border:`1px solid ${BORDER}`,fontSize:12,background:locked?"#eee":"#fff"}} onBlur={e=>{
+                      if(locked)return;
                       const newPrice=parseFloat(e.target.value);
                       if(isNaN(newPrice)||newPrice<=0){alert("⚠️ 請輸入有效價格");return;}
                       if(newPrice===item.price){
@@ -1010,6 +1016,11 @@ function App(){
       <div style={{padding:"20px 16px",maxWidth:480,margin:"0 auto"}}>
 
         {step===1&&<div>
+          <div style={{background:"#fff",border:`1.5px solid ${BORDER}`,borderRadius:10,padding:"12px 14px",marginBottom:16,fontSize:13,lineHeight:1.8,color:DARK}}>
+            <div style={{fontWeight:500,color:RED,marginBottom:2}}>🕙 營業時間 Opening Hours</div>
+            <div>週一至週六 Mon–Sat：10:30 – 19:00</div>
+            <div>週日公休 Sunday: Closed</div>
+          </div>
           <div style={{fontSize:16,fontWeight:500,marginBottom:16}}>顧客資料 Customer Info</div>
           <Lbl t="姓名 Name"/><input type="text" defaultValue={nRef.current} onChange={e=>{nRef.current=e.target.value;}} placeholder="請輸入姓名 Enter name" style={IS}/>
           <Lbl t="電話 Contact No.（選填 Optional）"/><input type="tel" defaultValue={phRef.current} onChange={e=>{phRef.current=e.target.value;}} placeholder="+27 82 000 0000" style={IS}/>
