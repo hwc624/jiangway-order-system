@@ -215,31 +215,19 @@ function parseTs(ts){
   }
 }
 
-function getNo(){
-  const today=new Date().toLocaleDateString("zh-TW");
-  const lastDate=localStorage.getItem("jw_no_date")||"";
-  let n;
-  if(today!==lastDate){
-    // 新的一天，從 1 開始
-    n=1;
-    localStorage.setItem("jw_no_date",today);
-    localStorage.setItem("jw_no",n);
-  } else {
-    // 同一天，加 1
-    n=parseInt(localStorage.getItem("jw_no")||"0")+1;
-    localStorage.setItem("jw_no",n);
-  }
-  return String(n).padStart(4,"0");
+// 舊版本留在客人手機上的 localStorage（訂單編號、訂單、售完）已不再使用，啟動時清掉一次
+try{["jw_no","jw_no_date","jw_orders","jw_soldOut"].forEach(k=>localStorage.removeItem(k));}catch(e){}
+
+// 訂單日期 key（YYYY-MM-DD）：新訂單用 dateKey；舊訂單從 ts（例如 "2026/5/7 上午10:48:20"）解析
+function orderDateKey(o){
+  if(o&&o.dateKey) return o.dateKey;
+  if(!o||!o.ts) return "未知日期";
+  const datePart=String(o.ts).trim().split(" ")[0];
+  const nums=datePart.split(/[\/\-]/).map(x=>parseInt(x,10));
+  if(nums.length<3||nums.some(isNaN)) return datePart;
+  return `${nums[0]}-${String(nums[1]).padStart(2,"0")}-${String(nums[2]).padStart(2,"0")}`;
 }
-function saveOrd(o){
-  // 完全禁用本地保存
-}
-function loadOrds(){
-  // 不讀本地 localStorage，只讀 Firebase
-  return [];
-}
-function loadSoldOut(){return JSON.parse(localStorage.getItem("jw_soldOut")||"{}");}
-function saveSoldOut(so){localStorage.setItem("jw_soldOut",JSON.stringify(so));}
+const ORDER_DISPLAY_LIMIT=200; // 後台訂單列表最多顯示幾筆（分析頁一律使用全部訂單）
 
 // 營業時間：週一至週六 10:30–19:00，週日公休
 function isOpenNow(){
@@ -269,21 +257,63 @@ function getSlots(dt){
     const nowMin=now.getHours()*60+now.getMinutes();
     if(nowMin>=openMin&&nowMin<closeMin)slots.push("盡快 ASAP");
   }
-  for(let t=openMin;t<=closeMin;t+=15){
+  for(let t=openMin;t<closeMin;t+=15){ // 19:00 打烊，最後一個時段 18:45
     if(td){const sd=new Date(now);sd.setHours(Math.floor(t/60),t%60,0,0);if(sd<=new Date(now.getTime()+600000))continue;}
     slots.push(`${String(Math.floor(t/60)).padStart(2,"0")}:${String(t%60).padStart(2,"0")}`);
   }
   return slots;
 }
+const itemDiscPrice=(price,pct)=>Math.round(price*(1-(Number(pct)||0)/100));
 function calcPromo(items,qty,promos){
   let disc=0;const discLines=[],addonList=[];
   const sub=items.reduce((s,i)=>s+i.price*qty(i.id),0);
   promos.filter(p=>p.active).forEach(p=>{
     if(p.type==="order_discount"){const d=Math.round(sub*(p.pct/100));disc+=d;discLines.push(`🎉 ${p.label}：-R${d}`);}
-    if(p.type==="item_discount"){items.filter(i=>i.id===p.itemId).forEach(i=>{const d=Math.round(i.price*qty(i.id)*(p.pct/100));disc+=d;discLines.push(`🎉 ${p.label}：-R${d}`);});}
+    // 品項折扣：先算「每份折後價」（四捨五入），再乘數量，跟菜單上顯示的折後價一致
+    if(p.type==="item_discount"){items.filter(i=>i.id===p.itemId).forEach(i=>{const d=(i.price-itemDiscPrice(i.price,p.pct))*qty(i.id);disc+=d;discLines.push(`🎉 ${p.label}：-R${d}`);});}
     if(p.type==="addon")addonList.push(p);
   });
   return{disc,discLines,addonList};
+}
+
+// 後台用：依「目前」菜單（含改價、新商品）、促銷、外送費重新計算訂單應收金額，抓出被竄改的訂單
+function repriceOrder(o,menuItems,promos,delivFee){
+  const issues=[];
+  const qmap={},pmap={};
+  (o.items||[]).forEach(it=>{
+    const q=Number(it.qty)||0;
+    const m=(it.id&&menuItems.find(x=>x.id===it.id))||menuItems.find(x=>x.name===it.name);
+    if(!m){
+      issues.push(`找不到品項「${it.name}」（以客人提交的單價 R${it.price} 計）`);
+      const k="?"+it.name; qmap[k]=(qmap[k]||0)+q; pmap[k]=Number(it.price)||0; return;
+    }
+    if(Number(it.price)!==m.price) issues.push(`${m.name} 單價 R${it.price}（菜單 R${m.price}）`);
+    qmap[m.id]=(qmap[m.id]||0)+q; pmap[m.id]=m.price;
+  });
+  const items=Object.keys(qmap).map(id=>({id,price:pmap[id]}));
+  const qf=id=>qmap[id]||0;
+  const sub=items.reduce((s,i)=>s+i.price*qf(i.id),0);
+  const {disc,addonList}=calcPromo(items,qf,promos);
+  if((Number(o.disc)||0)>disc+1) issues.push(`折扣 R${o.disc}（依目前促銷應為 R${disc}）`);
+  let addons=0;
+  (o.addons||[]).forEach(a=>{
+    const p=addonList.find(x=>x.addonName===a.addonName);
+    const price=p?Number(p.addonPrice)||0:Number(a.addonPrice)||0;
+    if(!p) issues.push(`加價購「${a.addonName}」目前沒有此促銷`);
+    else if(Number(a.addonPrice)!==price) issues.push(`加價購「${a.addonName}」R${a.addonPrice}（應為 R${price}）`);
+    addons+=price*(Number(a.qty)||0);
+  });
+  let fee=0;
+  if(o.pickup==="外送"){
+    const dN=parseFloat(o.distance);
+    const free=(sub-disc+addons)>=1500&&Number.isFinite(dN)&&dN>0&&dN<=5;
+    fee=free?0:(Number(delivFee)||0);
+    if((Number(o.fee)||0)!==fee) issues.push(`外送費 R${Number(o.fee)||0}（應為 R${fee}）`);
+  }
+  const expected=sub-disc+addons+fee;
+  const submitted=Number(o.total);
+  const totalMismatch=!Number.isFinite(submitted)||Math.abs(submitted-expected)>1;
+  return {expected,submitted,issues,flag:totalMismatch||issues.length>0,totalMismatch};
 }
 
 function QRCodeShare({appUrl,BORDER,RED,NAVY,DARK}){
@@ -365,8 +395,8 @@ function AnalyticsTab({orders,BORDER,RED,NAVY,DARK}){
 
   const filtered=orders.filter(o=>{
     if(aDate){
-      const oDate=o.ts?o.ts.split(" ")[0]:"";
-      if(oDate!==aDate)return false;
+      // <input type="date"> 的值是 "YYYY-MM-DD"，所以用同格式的 dateKey 比對（舊訂單從 ts 換算）
+      if(orderDateKey(o)!==aDate)return false;
     }
     return true;
   });
@@ -382,8 +412,8 @@ function AnalyticsTab({orders,BORDER,RED,NAVY,DARK}){
     if(o.items){
       o.items.forEach(i=>{
         if(!itemMap[i.name])itemMap[i.name]={name:i.name,qty:0,rev:0};
-        itemMap[i.name].qty+=i.qty;
-        itemMap[i.name].rev+=i.price*i.qty;
+        itemMap[i.name].qty+=Number(i.qty)||0;
+        itemMap[i.name].rev+=(Number(i.price)||0)*(Number(i.qty)||0);
       });
     }
   });
@@ -395,19 +425,19 @@ function AnalyticsTab({orders,BORDER,RED,NAVY,DARK}){
     const k=o.name||"未知";
     if(!custMap[k])custMap[k]={name:k,orders:0,total:0};
     custMap[k].orders+=1;
-    custMap[k].total+=o.total;
+    custMap[k].total+=Number(o.total)||0;
   });
   const custList=Object.values(custMap).sort((a,b)=>b.total-a.total);
 
   // 每日分析
   const dayMap={};
   filtered.forEach(o=>{
-    const d=o.ts?o.ts.split(" ")[0]:"未知";
+    const d=orderDateKey(o);
     if(!dayMap[d])dayMap[d]={date:d,orders:0,total:0};
     dayMap[d].orders+=1;
-    dayMap[d].total+=o.total;
+    dayMap[d].total+=Number(o.total)||0;
   });
-  const dayList=Object.values(dayMap).sort((a,b)=>new Date(b.date)-new Date(a.date));
+  const dayList=Object.values(dayMap).sort((a,b)=>b.date.localeCompare(a.date));
 
   const Card=({label,val,sub})=>(
     <div style={{flex:1,background:"#fff",borderRadius:10,padding:"14px 12px",border:`1px solid ${BORDER}`,textAlign:"center"}}>
@@ -419,7 +449,7 @@ function AnalyticsTab({orders,BORDER,RED,NAVY,DARK}){
 
   return(
     <div>
-      <div style={{fontSize:14,fontWeight:500,color:NAVY,marginBottom:12}}>📊 銷售分析 Sales Analytics</div>
+      <div style={{fontSize:14,fontWeight:500,color:NAVY,marginBottom:12}}>📊 銷售分析 Sales Analytics <span id="analyticsCount" style={{fontSize:11,color:"#888",fontWeight:400}}>（全部 {orders.length} 筆訂單）</span></div>
 
       {/* 日期篩選 */}
       <div style={{display:"flex",gap:8,marginBottom:16,alignItems:"center"}}>
@@ -541,6 +571,7 @@ function App(){
   const [ordNo,setOrdNo]=useState("");
   const [submittedTxt,setSubmittedTxt]=useState(""); // step 5 用的訂單文字（提交時凍結）
   const [submitting,setSubmitting]=useState(false); // 防止重複提交
+  const [saveStatus,setSaveStatus]=useState(""); // 提交後訂單是否成功存入：ok / failed / timeout
   const [pForm,setPForm]=useState({type:"order_discount",label:"",pct:"",itemId:"",addonName:"",addonPrice:""});
   const [distance,setDistance]=useState("");
   const [eftProof,setEftProof]=useState("");
@@ -622,7 +653,7 @@ function App(){
       // 按時間排序（最新在上）
       fbOrdersList.sort((a,b)=>parseTs(b.ts)-parseTs(a.ts));
       
-      setOrders(fbOrdersList.slice(0,200));
+      setOrders(fbOrdersList); // 全部訂單（分析頁要用全部）；列表顯示另外限制筆數
       console.log("📡 從 Firebase orders 更新訂單，共", fbOrdersList.length, "筆");
     },error=>{
       console.error("❌ Firebase 訂單讀取錯誤:", error.message);
@@ -712,20 +743,21 @@ function App(){
   ];
 
   const qty=id=>cart[id]||0;
-  const cartItems=effectiveAll.filter(i=>qty(i.id)>0);
+  const cartItems=effectiveAll.filter(i=>qty(i.id)>0&&!soldOut[i.id]); // 售完的品項不計入訂單
   const sub=cartItems.reduce((s,i)=>s+i.price*qty(i.id),0);
-  const bentoCnt=cartItems.filter(i=>i.id.startsWith("b")).reduce((s,i)=>s+qty(i.id),0);
   const {disc,discLines,addonList}=calcPromo(cartItems,qty,promos);
   const addonTotal=addonList.reduce((s,p)=>s+(p.addonPrice*(addonQty[p.id]||0)),0);
   const totalBeforeDelivFee=sub-disc+addonTotal;
-  const distNum=parseFloat(distance)||999;
+  const distParsed=parseFloat(distance);
+  const distValid=Number.isFinite(distParsed)&&distParsed>0;
+  const distNum=distValid?distParsed:999; // 沒填、0、負數都視為無效（不能享免運）
   const isFreeDelivery=totalBeforeDelivFee>=1500&&distNum<=5;
   const fee=pickup==="外送"&&!isFreeDelivery?delivFee:0;
   const total=sub-disc+addonTotal+fee;
   const belowMin=minOrder>0&&sub<minOrder;
   const activePromos=promos.filter(p=>p.active);
   const slots=selDate?getSlots(selDate):[];
-  const dates=getDates();
+  const dates=getDates().filter(d=>!isToday(d)||getSlots(d).length>0); // 今天已沒有可選時段就不顯示「今天」
 
   const adj=useCallback((id,d)=>setCart(c=>{const n=Math.max(0,(c[id]||0)+d);const x={...c};if(n===0)delete x[id];else x[id]=n;return x;}),[]);
   const adjA=(id,d)=>setAddonQty(a=>({...a,[id]:Math.max(0,(a[id]||0)+d)}));
@@ -761,18 +793,26 @@ function App(){
     setStep(2);
   };
   const go4=()=>{
-    setAddr(adRef.current);setNote(noRef.current);
-    const no=getNo();setOrdNo(no);
-    // 不保存到本地或 Firebase，只生成訂單號，等提交時才保存
+    const a=(adRef.current||"").trim();
+    if(cartItems.length===0){alert("⚠️ 購物車是空的（品項可能剛售完），請回上一步選餐\nYour cart is empty");return;}
+    if(pickup==="外送"){
+      if(!a){alert("⚠️ 請輸入外送地址 Please enter delivery address");return;}
+      if(!distValid){alert("⚠️ 請輸入正確的距離（大於 0 的數字）Please enter a valid distance (> 0 km)");return;}
+    }
+    if(!selDate){alert("⚠️ 請選擇日期 Please select a date");return;}
+    if(!time){alert("⚠️ 請選擇時間 Please select a time");return;}
+    if(!getSlots(selDate).includes(time)){alert("⚠️ 這個時段已經過了，請重新選擇時間 This time slot is no longer available");setTime("");return;}
+    setAddr(a);setNote(noRef.current);
+    setOrdNo(""); // 訂單編號提交後才由伺服器產生
     setStep(4);
   };
   const pickLbl=()=>pickup==="外帶"?"外帶 Takeaway":pickup==="外送"?"外送 Delivery":"內用 Dine-in";
   const payLbl=()=>pay==="現金"?"現金 Cash":pay==="餐券"?"餐券 Voucher":"EFT";
-  const orderTxt=()=>{
+  const orderTxt=(no)=>{
     const em=pickup==="外送"?"🛵":pickup==="內用"?"🪑":"🥡";
     const aLines=addonList.filter(p=>(addonQty[p.id]||0)>0).map(p=>`  ＋${p.addonName} × ${addonQty[p.id]}　R${p.addonPrice*addonQty[p.id]}`);
     return[
-      `🏮 江味齋 JiangWay 訂單 #${ordNo}`,
+      `🏮 江味齋 JiangWay 訂單 ${no?"#"+no:"（編號提交後產生）"}`,
       `📅 ${new Date().toLocaleDateString("zh-TW",{year:"numeric",month:"long",day:"numeric",weekday:"short"})}`,
       "─────────────────────",
       `👤 ${nameVal}${phoneVal?` · ${phoneVal}`:""}`,
@@ -804,6 +844,7 @@ function App(){
   };
   const sendWA=async ()=>{
     if(submitting)return; // 防止連點造成重複訂單
+    if(cartItems.length===0){alert("⚠️ 購物車是空的（品項可能剛售完），請回上一步選餐\nYour cart is empty");return;}
     setSubmitting(true);
 
     // 用今天的本地日期作為 key（例如 "2026-06-09"）
@@ -817,9 +858,11 @@ function App(){
     if(window.fbDb){
       try{
         const counterRef=window.fbDb.ref(`order_counters/${todayKey}`);
-        const result=await counterRef.transaction(current=>{
-          return (current||0)+1;
-        });
+        // 最多等 4 秒（網路斷線時 transaction 會一直等，避免「處理中」卡住）
+        const result=await Promise.race([
+          counterRef.transaction(current=>(current||0)+1),
+          new Promise((_,rej)=>setTimeout(()=>rej(new Error("transaction timeout")),4000))
+        ]);
         
         if(result&&result.committed){
           const newCount=result.snapshot.val();
@@ -842,7 +885,7 @@ function App(){
     setOrdNo(realOrdNo);
     
     // 凍結訂單文字給 step 5 使用（避免 reset 後文字消失）
-    const frozenTxt=orderTxt().replace(/#\d+/, "#"+realOrdNo);
+    const frozenTxt=orderTxt(realOrdNo);
     setSubmittedTxt(frozenTxt);
     const waUrl=`https://wa.me/${WA}?text=${encodeURIComponent(frozenTxt)}`;
     
@@ -857,7 +900,7 @@ function App(){
       distance,
       selDate:selDate?fmtKey(selDate):"", // 存成 "YYYY-MM-DD" 字串（Date 物件 Firebase 會直接丟掉）
       time,
-      items:cartItems.map(i=>({name:i.name,nameEn:i.nameEn,qty:qty(i.id),price:i.price})),
+      items:cartItems.map(i=>({id:i.id,name:i.name,nameEn:i.nameEn||"",qty:qty(i.id),price:i.price})), // id 讓後台可依菜單重新驗算
       addons:addonList.filter(p=>(addonQty[p.id]||0)>0).map(p=>({addonName:p.addonName,qty:addonQty[p.id],addonPrice:p.addonPrice})),
       disc,
       fee,
@@ -870,28 +913,30 @@ function App(){
     };
     
     // 存到 Firebase（用 push 確保 key 絕對唯一）
-    let savePromise=Promise.resolve();
+    let savePromise=Promise.resolve("failed");
     if(window.fbDb){
       const newRef=window.fbDb.ref("orders").push();
-      savePromise=newRef.set(newOrder).catch(err=>{
+      savePromise=newRef.set(newOrder).then(()=>"ok").catch(err=>{
         console.error("❌ Firebase 存訂單失敗:", err.message);
-        alert("⚠️ 訂單上傳失敗，請截圖並通知店家\n"+err.message);
+        return "failed";
       });
     }
     // 等訂單寫入 Firebase 完成（最多等 3 秒，避免網路慢時卡住）
-    await Promise.race([savePromise,new Promise(r=>setTimeout(r,3000))]);
-    
-    // 跳到 step 5（提交完成頁面），然後自動開啟 WhatsApp 送出訂單
+    const result=await Promise.race([savePromise,new Promise(r=>setTimeout(()=>r("timeout"),3000))]);
+    setSaveStatus(result);
+    if(result==="timeout") savePromise.then(r=>setSaveStatus(r)); // 之後若存好了，更新提示
+
+    // 跳到 step 5（提交完成頁面）；成功存入才自動開啟 WhatsApp，否則顯示警告讓客人手動傳送
     setSubmitting(false);
     setStep(5);
-    setTimeout(()=>{window.location.href=waUrl;},400);
+    if(result==="ok") setTimeout(()=>{window.location.href=waUrl;},400);
   };
   const copy=()=>{
-    const txt=orderTxt();
+    const txt=orderTxt(ordNo);
     if(navigator.clipboard){navigator.clipboard.writeText(txt).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2500);});}
     else{const t=document.createElement("textarea");t.value=txt;document.body.appendChild(t);t.select();document.execCommand("copy");document.body.removeChild(t);setCopied(true);setTimeout(()=>setCopied(false),2500);}
   };
-  const reset=()=>{nRef.current="";phRef.current="";adRef.current="";noRef.current="";setStep(1);setNameVal("");setPhoneVal("");setCart({});setAddonQty({});setPickup("外帶");setAddr("");setPay("現金");setSelDate(null);setTime("");setNote("");setCopied(false);setOrdNo("");setDistance("");setEftProof("");setEftProofFile(null);setSubmittedTxt("");setSubmitting(false);};
+  const reset=()=>{nRef.current="";phRef.current="";adRef.current="";noRef.current="";setStep(1);setNameVal("");setPhoneVal("");setCart({});setAddonQty({});setPickup("外帶");setAddr("");setPay("現金");setSelDate(null);setTime("");setNote("");setCopied(false);setOrdNo("");setDistance("");setEftProof("");setEftProofFile(null);setSubmittedTxt("");setSubmitting(false);setSaveStatus("");};
   const addPromo=()=>{
     if(!pForm.label){alert("⚠️ 請輸入促銷名稱");return;}
     if(pForm.type!=="addon"&&!pForm.pct){alert("⚠️ 請輸入折扣 %");return;}
@@ -1019,7 +1064,7 @@ function App(){
                   <div key={item.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,padding:"6px 8px",background:"#FAFAFA",borderRadius:6}}>
                     <span style={{flex:1,fontSize:12}}>{item.name}{locked?" 🔒":""}</span>
                     <span style={{fontSize:11,color:"#888"}}>原 R{item.price}</span>
-                    <input type="number" defaultValue={curPrice} disabled={locked} placeholder="新價" style={{width:70,padding:"4px 6px",borderRadius:4,border:`1px solid ${BORDER}`,fontSize:12,background:locked?"#eee":"#fff"}} onBlur={e=>{
+                    <input type="number" key={item.id+"-"+curPrice} defaultValue={curPrice} disabled={locked} placeholder="新價" style={{width:70,padding:"4px 6px",borderRadius:4,border:`1px solid ${BORDER}`,fontSize:12,background:locked?"#eee":"#fff"}} onBlur={e=>{
                       if(locked)return;
                       const newPrice=parseFloat(e.target.value);
                       if(isNaN(newPrice)||newPrice<=0){alert("⚠️ 請輸入有效價格");return;}
@@ -1095,15 +1140,7 @@ function App(){
         {adminTab==="orders"&&<>
           {orders.length===0&&<div style={{textAlign:"center",color:"#aaa",padding:"40px 0"}}>尚無訂單記錄</div>}
           {(()=>{
-            // 取得訂單的日期 key：優先用 dateKey 欄位（新訂單）；沒有的話 fallback 解析 ts（舊訂單）
-            const getDateKey=(o)=>{
-              if(o.dateKey) return o.dateKey; // 新訂單直接用此欄位（格式 2026-06-09）
-              if(!o.ts) return "未知日期";
-              const datePart=o.ts.trim().split(" ")[0];
-              const nums=datePart.split(/[\/\-]/).map(x=>parseInt(x,10));
-              if(nums.length<3||nums.some(isNaN)) return datePart;
-              return `${nums[0]}-${String(nums[1]).padStart(2,"0")}-${String(nums[2]).padStart(2,"0")}`;
-            };
+            const getDateKey=orderDateKey;
             // 顯示用的格式
             const dispDate=(key)=>{
               const nums=key.split(/[\/\-]/).map(x=>parseInt(x,10));
@@ -1111,7 +1148,7 @@ function App(){
               return `${nums[0]}/${String(nums[1]).padStart(2,"0")}/${String(nums[2]).padStart(2,"0")}`;
             };
             // 按日期分組訂單
-            const sorted=[...orders].sort((a,b)=>parseTs(b.ts)-parseTs(a.ts));
+            const sorted=[...orders].sort((a,b)=>parseTs(b.ts)-parseTs(a.ts)).slice(0,ORDER_DISPLAY_LIMIT);
             const groups={};
             sorted.forEach(o=>{
               const dk=getDateKey(o);
@@ -1119,18 +1156,17 @@ function App(){
               groups[dk].push(o);
             });
             // 各組內也按時間排序（新→舊）
-            return Object.entries(groups).map(([dk,os])=>(
+            return [orders.length>ORDER_DISPLAY_LIMIT&&<div key="_limit" id="ordersLimitNote" style={{fontSize:12,color:"#888",textAlign:"center",marginBottom:10}}>顯示最新 {ORDER_DISPLAY_LIMIT} 筆（共 {orders.length} 筆；完整統計請看「分析」）</div>,
+              ...Object.entries(groups).map(([dk,os])=>(
               <div key={dk} style={{marginBottom:20}}>
                 <div style={{background:NAVY,color:"#fff",padding:"8px 12px",borderRadius:8,fontSize:13,fontWeight:500,marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                   <span>📅 {dispDate(dk)}</span>
                   <span style={{fontSize:11,opacity:0.85}}>{os.length} 筆訂單</span>
                 </div>
                 {os.map(o=>{
-                  // 安全檢查：用品項重新驗算金額，發現竄改就警告
-                  const itemsTotal=(o.items||[]).reduce((s,i)=>s+(i.price||0)*(i.qty||0),0);
-                  const addonsTotal=(o.addons||[]).reduce((s,a)=>s+(a.addonPrice||0)*(a.qty||0),0);
-                  const expectedMin=itemsTotal+addonsTotal-(o.disc||0); // 不含運費的最低值
-                  const suspicious=o.total!==undefined&&itemsTotal>0&&(o.total<expectedMin-1||o.total>expectedMin+(o.fee||0)+1);
+                  // 安全檢查：依目前菜單／促銷／外送費重新計算應收金額，發現不符就標紅
+                  const chk=repriceOrder(o,effectiveAll,promos,delivFee);
+                  const suspicious=chk.flag;
                   return(
                   <div key={o._fbKey||(o.no+o.ts)} style={{background:"#fff",border:`1.5px solid ${suspicious?RED:BORDER}`,borderRadius:10,padding:"12px",marginBottom:10}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
@@ -1139,7 +1175,11 @@ function App(){
                           <span style={{fontSize:13,fontWeight:500,color:NAVY}}>#{o.no} · {o.name}</span>
                           <span style={{color:RED,fontWeight:500}}>R{o.total}</span>
                         </div>
-                        {suspicious&&<div style={{fontSize:11,color:RED,fontWeight:500,marginTop:2}}>⚠️ 金額異常！品項合計約 R{itemsTotal+addonsTotal}，請核對</div>}
+                        {suspicious&&<div className="price-alert" style={{fontSize:12,color:RED,fontWeight:500,marginTop:4,background:"#FFF0F0",borderRadius:6,padding:"6px 8px"}}>
+                          ⚠️ 金額異常：應收 R{chk.expected}，客人提交 R{Number.isFinite(chk.submitted)?chk.submitted:"?"}
+                          {chk.issues.map((t,k)=><div key={k} style={{fontWeight:400,fontSize:11}}>・{t}</div>)}
+                          <div style={{fontWeight:400,fontSize:10,color:"#999",marginTop:2}}>以目前的菜單、促銷、外送費計算；若下單後有改價或改促銷，可能誤報。出餐前請核對。</div>
+                        </div>}
                         <div style={{fontSize:12,color:"#888",margin:"4px 0"}}>{o.ts} · {o.pickup} · {o.pay}</div>
                         {(o.selDate||o.time)&&<div className="ord-when" style={{fontSize:12,color:NAVY,fontWeight:500,marginBottom:2}}>🗓 取餐：{typeof o.selDate==="string"?o.selDate:""} {o.time||""}</div>}
                         {o.phone&&<div style={{fontSize:12,color:"#555"}}>📞 <a href={`tel:${o.phone}`} style={{color:"#555"}}>{o.phone}</a></div>}
@@ -1163,7 +1203,7 @@ function App(){
                   </div>
                 );})}
               </div>
-            ));
+            ))];
           })()}
           <button onClick={()=>{
             const typed=prompt("⚠️ 清除所有訂單是危險操作，無法復原！\n請輸入「清除」兩個字確認：");
@@ -1211,8 +1251,8 @@ function App(){
             <div style={{fontSize:13,lineHeight:1.8,color:DARK}}>週日公休 Sunday: Closed</div>
           </div>
           <div className="ttl">顧客資料 Customer Info</div>
-          <Lbl t="姓名 Name"/><input type="text" defaultValue={nRef.current} onChange={e=>{nRef.current=e.target.value;}} placeholder="請輸入姓名 Enter name" style={IS}/>
-          <Lbl t="電話 Contact No.（選填 Optional）"/><input type="tel" defaultValue={phRef.current} onChange={e=>{phRef.current=e.target.value;}} placeholder="+27 82 000 0000" style={IS}/>
+          <Lbl t="姓名 Name"/><input type="text" defaultValue={nRef.current} onChange={e=>{nRef.current=e.target.value;}} placeholder="請輸入姓名 Enter name" maxLength={100} style={IS}/>
+          <Lbl t="電話 Contact No.（選填 Optional）"/><input type="tel" defaultValue={phRef.current} onChange={e=>{phRef.current=e.target.value;}} placeholder="+27 82 000 0000" maxLength={40} style={IS}/>
           <button onClick={go2} style={{width:"100%",background:RED,color:"#fff",border:"none",borderRadius:10,padding:"14px",fontSize:15,fontWeight:500,cursor:"pointer",marginTop:24,boxShadow:BTN_SHADOW,letterSpacing:1}}>下一步 Next →</button>
         </div>}
 
@@ -1224,7 +1264,7 @@ function App(){
               {cat.items.map(item=>{
                 const out=soldOut[item.id];
                 const ip=promos.find(p=>p.active&&p.type==="item_discount"&&p.itemId===item.id);
-                const dp=ip?Math.round(item.price*(1-ip.pct/100)):null;
+                const dp=ip?itemDiscPrice(item.price,ip.pct):null;
                 return(
                   <div key={item.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 14px",marginBottom:8,background:"#fff",borderRadius:12,border:`1.5px solid ${qty(item.id)?RED:BORDER}`,boxShadow:"0 1px 4px rgba(90,50,20,0.06)",opacity:out?0.45:1}}>
                     <div style={{flex:1,paddingRight:8}}>
@@ -1234,10 +1274,11 @@ function App(){
                         {ip&&!out&&<span style={{fontSize:10,background:"#FFF3CD",color:"#7A5800",borderRadius:4,padding:"1px 6px",fontWeight:500}}>-{ip.pct}% OFF</span>}
                       </div>
                       <div style={{fontSize:11,color:"#8A7560",marginTop:2}}>{item.nameEn}</div>
+                      {out&&qty(item.id)>0&&<div className="soldout-in-cart" style={{fontSize:11,color:RED,marginTop:2}}>已售完，不會計入訂單 Sold out — not included</div>}
                       <div style={{fontSize:14,marginTop:3,fontWeight:700,color:RED}}>{dp?<span><span style={{textDecoration:"line-through",color:"#bbb",fontWeight:400,fontSize:12}}>R{item.price}</span> R{dp}</span>:<span>R{item.price}</span>}</div>
                     </div>
                     <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-                      {!out&&qty(item.id)>0&&<><button onClick={()=>adj(item.id,-1)} style={{width:34,height:34,borderRadius:17,border:`1.5px solid ${RED}`,background:"#fff",color:RED,fontSize:20,cursor:"pointer",lineHeight:1}}>−</button><span style={{fontSize:15,fontWeight:700,minWidth:20,textAlign:"center"}}>{qty(item.id)}</span></>}
+                      {qty(item.id)>0&&<><button onClick={()=>adj(item.id,-1)} style={{width:34,height:34,borderRadius:17,border:`1.5px solid ${RED}`,background:"#fff",color:RED,fontSize:20,cursor:"pointer",lineHeight:1}}>−</button><span style={{fontSize:15,fontWeight:700,minWidth:20,textAlign:"center"}}>{qty(item.id)}</span></>}
                       {!out&&<button onClick={()=>adj(item.id,1)} style={{width:34,height:34,borderRadius:17,border:`1.5px solid ${RED}`,background:qty(item.id)?RED:"#fff",color:qty(item.id)?"#fff":RED,fontSize:20,cursor:"pointer",lineHeight:1}}>+</button>}
                     </div>
                   </div>
@@ -1284,8 +1325,8 @@ function App(){
               {isFreeDelivery&&<><br/><span style={{color:"#27AE60"}}>✓ 符合免費外送！Eligible for free delivery!</span></>}
               {!isFreeDelivery&&delivFee>0&&<><br/><span style={{color:"#555"}}>外送費 Delivery fee：R{delivFee}</span></>}
             </div>
-            <Lbl t="外送地址 Delivery Address"/><input type="text" defaultValue={adRef.current} onChange={e=>{adRef.current=e.target.value;}} placeholder="請輸入地址 Enter address" style={IS}/>
-            <Lbl t="距離 Distance (KM)"/><input type="number" step="0.1" value={distance} onChange={e=>setDistance(e.target.value)} placeholder="例如：3.5" style={IS}/>
+            <Lbl t="外送地址 Delivery Address"/><input type="text" defaultValue={adRef.current} onChange={e=>{adRef.current=e.target.value;}} placeholder="請輸入地址 Enter address" maxLength={300} style={IS}/>
+            <Lbl t="距離 Distance (KM)"/><input type="number" min="0" step="0.1" value={distance} onChange={e=>setDistance(e.target.value)} placeholder="例如：3.5" style={IS}/>
           </>}
           <Lbl t={pickup==="內用"?"預計用餐日期 Dining Date":"預計取餐日期 Pickup Date"}/>
           <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:4,marginTop:6}}>
@@ -1314,12 +1355,13 @@ function App(){
                 value={eftProof}
                 onChange={e=>setEftProof(e.target.value)}
                 placeholder="貼上證明圖片連結或描述 Paste proof image URL or describe" 
+                maxLength={500}
                 style={{...IS,fontSize:13}}
               />
               <div style={{fontSize:11,color:"#888",marginTop:6}}>⚠️ 上傳付款證明後才能出餐 Food will be prepared after proof is submitted</div>
             </div>
           </div>}
-          <Lbl t="備註 Remarks（選填 Optional）"/><textarea defaultValue={noRef.current} onChange={e=>{noRef.current=e.target.value;}} placeholder="例：不要辣、少油... e.g. No spicy" style={{...IS,minHeight:68,resize:"vertical"}}/>
+          <Lbl t="備註 Remarks（選填 Optional）"/><textarea maxLength={500} defaultValue={noRef.current} onChange={e=>{noRef.current=e.target.value;}} placeholder="例：不要辣、少油... e.g. No spicy" style={{...IS,minHeight:68,resize:"vertical"}}/>
           <div style={{display:"flex",gap:10,marginTop:16}}>
             <button onClick={()=>setStep(2)} style={{padding:"12px 18px",borderRadius:10,border:`1.5px solid ${BORDER}`,background:"#fff",color:DARK,fontSize:13,cursor:"pointer"}}>← 返回 Back</button>
             <button onClick={go4} style={{background:RED,color:"#fff",border:"none",borderRadius:10,padding:"12px 24px",fontSize:14,fontWeight:500,cursor:"pointer",marginTop:8,boxShadow:BTN_SHADOW}}>確認訂單 Confirm →</button>
@@ -1329,7 +1371,7 @@ function App(){
         {step===4&&<div>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
             <div className="ttl" style={{marginBottom:0}}>訂單確認 Order Summary</div>
-            <div style={{background:RED,color:"#fff",borderRadius:6,padding:"3px 10px",fontSize:13,fontWeight:500}}>#{ordNo}</div>
+            <div id="confirmOrdNo" style={{background:"#eee",color:"#888",borderRadius:6,padding:"3px 10px",fontSize:12,fontWeight:500}}>訂單編號：提交後產生</div>
           </div>
           <div style={{background:"#fff",border:`1.5px solid ${BORDER}`,borderRadius:14,padding:"16px 14px",marginBottom:16,boxShadow:CARD_SHADOW}}>
             <Row label="顧客 Customer" val={`${nameVal}${phoneVal?` · ${phoneVal}`:""}`}/>
@@ -1370,21 +1412,26 @@ function App(){
         </div>}
         {step===5&&<div>
           <div style={{textAlign:"center",marginBottom:24}}>
-            <div style={{fontSize:48,marginBottom:8}}>✅</div>
-            <div className="serif" style={{fontSize:22,fontWeight:700,color:"#27AE60",marginBottom:6}}>訂單已提交！</div>
-            <div style={{fontSize:14,color:"#27AE60",marginBottom:14}}>Order Submitted!</div>
+            <div style={{fontSize:48,marginBottom:8}}>{saveStatus==="ok"?"✅":"⚠️"}</div>
+            <div className="serif" style={{fontSize:22,fontWeight:700,color:saveStatus==="ok"?"#27AE60":"#E67E22",marginBottom:6}}>{saveStatus==="ok"?"訂單已提交！":"請用 WhatsApp 傳送訂單"}</div>
+            <div style={{fontSize:14,color:saveStatus==="ok"?"#27AE60":"#E67E22",marginBottom:14}}>{saveStatus==="ok"?"Order Submitted!":"Please send your order via WhatsApp"}</div>
             <div style={{background:RED,color:"#fff",borderRadius:8,padding:"8px 16px",fontSize:15,fontWeight:500,display:"inline-block"}}>訂單編號 #{ordNo}</div>
           </div>
           
+          {saveStatus!=="ok"&&<div id="saveWarn" style={{background:"#FFE8E8",border:`2px solid ${RED}`,borderRadius:14,padding:"14px 16px",marginBottom:16,fontSize:13,color:RED,lineHeight:1.6}}>
+            {saveStatus==="timeout"
+              ?<>⚠️ 網路較慢，訂單<strong>可能尚未存入</strong>店家系統。請務必按下方綠色按鈕用 WhatsApp 傳送訂單，店家才會收到。<br/><span style={{fontSize:12}}>Your order may not have been saved yet (slow network). Please tap the green button to send it via WhatsApp.</span></>
+              :<>⚠️ 訂單<strong>未能存入</strong>店家系統（可能是網路問題）。請務必按下方綠色按鈕用 WhatsApp 傳送訂單，並截圖此畫面。<br/><span style={{fontSize:12}}>Your order could not be saved. Please tap the green button to send it via WhatsApp and take a screenshot.</span></>}
+          </div>}
           <div style={{background:"#FFF9E6",border:`2px solid #F39C12`,borderRadius:14,padding:"16px",marginBottom:16}}>
-            <div style={{fontSize:14,fontWeight:700,color:"#7A5800",marginBottom:8}}>📱 正在開啟 WhatsApp… Opening WhatsApp…</div>
+            <div style={{fontSize:14,fontWeight:700,color:"#7A5800",marginBottom:8}}>{saveStatus==="ok"?"📱 正在開啟 WhatsApp… Opening WhatsApp…":"📱 請按下方按鈕開啟 WhatsApp"}</div>
             <div style={{fontSize:12,color:"#7A5800",lineHeight:1.6,marginBottom:10}}>請在 WhatsApp 裡按<strong>「傳送」</strong>把訂單送給店家，我們收到後才會開始準備您的餐點。</div>
             <div style={{fontSize:12,color:"#7A5800",lineHeight:1.6}}>Please tap <strong>Send</strong> in WhatsApp to deliver your order to us. We will start preparing once we receive it.</div>
           </div>
           
           {/* 如果沒有自動跳轉，可以手動按這個按鈕 */}
           <a 
-            href={`https://wa.me/${WA}?text=${encodeURIComponent(submittedTxt||orderTxt().replace(/#\d+/, "#"+ordNo))}`}
+            href={`https://wa.me/${WA}?text=${encodeURIComponent(submittedTxt||orderTxt(ordNo))}`}
             style={{
               display:"block",
               width:"100%",
@@ -1407,7 +1454,7 @@ function App(){
           {/* 備案：複製訂單文字 */}
           <button 
             onClick={()=>{
-              const txt=submittedTxt||orderTxt().replace(/#\d+/, "#"+ordNo);
+              const txt=submittedTxt||orderTxt(ordNo);
               if(navigator.clipboard){
                 navigator.clipboard.writeText(txt).then(()=>{
                   setCopied(true);
