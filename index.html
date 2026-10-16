@@ -548,7 +548,7 @@ function App(){
   const [authUser,setAuthUser]=useState(null);   // Firebase Auth 使用者
   const [isStaff,setIsStaff]=useState(false);    // 是否在 /staff 名單（或有 admin 宣告）
   const [authReady,setAuthReady]=useState(false);
-  const [loginErr,setLoginErr]=useState("");
+  const [loginErr,setLoginErr]=useState("");const [resetMsg,setResetMsg]=useState("");
   const [loggingIn,setLoggingIn]=useState(false);
   const [soldOut,setSoldOut]=useState({});
   const [promos,setPromos]=useState([]);
@@ -780,6 +780,17 @@ function App(){
       setLoginErr(authErrMsg(err));
     }finally{ setLoggingIn(false); }
   };
+  const doReset=async ()=>{
+    const email=(emailRef.current||"").trim();
+    setResetMsg("");
+    if(!email){setLoginErr("請先在上面輸入你的店主 Email，再按「忘記密碼」");return;}
+    if(!window.fbAuth){setLoginErr("登入系統載入失敗，請重新整理頁面");return;}
+    try{
+      await window.fbAuth.sendPasswordResetEmail(email);
+      setLoginErr("");
+      setResetMsg("已寄出重設密碼信到 "+email+"，請到信箱點連結設定新密碼（沒看到請查垃圾郵件）");
+    }catch(err){ setLoginErr(authErrMsg(err)); }
+  };
   const doLogout=()=>{
     if(!window.fbAuth){setMode("customer");return;}
     window.fbAuth.signOut().then(()=>setMode("customer")).catch(fbErr("登出"));
@@ -976,10 +987,12 @@ function App(){
         <form onSubmit={e=>{e.preventDefault();doLogin();}}>
           <input id="staffEmail" type="email" autoComplete="username" defaultValue="" onChange={e=>{emailRef.current=e.target.value;setLoginErr("");}} placeholder="Email" style={{...IS,textAlign:"left"}}/>
           <input id="staffPassword" type="password" autoComplete="current-password" defaultValue="" onChange={e=>{pwRef.current=e.target.value;setLoginErr("");}} placeholder="密碼 Password" style={{...IS,textAlign:"left",marginTop:10}}/>
+          {resetMsg&&<div id="resetMsg" style={{color:"#2E7D32",fontSize:13,marginTop:10,whiteSpace:"pre-wrap",wordBreak:"break-all",textAlign:"left"}}>{resetMsg}</div>}
           {loginErr&&<div id="loginErr" style={{color:RED,fontSize:13,marginTop:10,whiteSpace:"pre-wrap",wordBreak:"break-all",textAlign:"left"}}>{loginErr}</div>}
           <button id="staffLoginBtn" type="submit" disabled={loggingIn} style={{width:"100%",background:loggingIn?"#ccc":RED,color:"#fff",border:"none",borderRadius:10,padding:"13px",fontSize:14,fontWeight:500,cursor:loggingIn?"not-allowed":"pointer",marginTop:16,boxShadow:BTN_SHADOW}}>{loggingIn?"登入中…":"登入 Login"}</button>
         </form>
-        <button onClick={()=>{setLoginErr("");setMode("customer");}} style={{width:"100%",background:"#fff",color:"#888",border:`1.5px solid ${BORDER}`,borderRadius:10,padding:"12px",fontSize:13,cursor:"pointer",marginTop:10}}>取消 Cancel</button>
+        <button id="forgotPwBtn" type="button" onClick={doReset} style={{background:"none",border:"none",color:"#888",fontSize:13,textDecoration:"underline",cursor:"pointer",marginTop:12}}>忘記密碼？Forgot password</button>
+        <button onClick={()=>{setLoginErr("");setResetMsg("");setMode("customer");}} style={{width:"100%",background:"#fff",color:"#888",border:`1.5px solid ${BORDER}`,borderRadius:10,padding:"12px",fontSize:13,cursor:"pointer",marginTop:10}}>取消 Cancel</button>
       </div>
     </div>
   );
