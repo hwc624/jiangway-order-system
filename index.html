@@ -580,6 +580,18 @@ function App(){
   const nRef=useRef(""),phRef=useRef(""),adRef=useRef(""),noRef=useRef(""),emailRef=useRef(""),pwRef=useRef(""),minRef=useRef(null),feeRef=useRef(null);
   const wantAdminRef=useRef(false); // 使用者是否剛按了登入（登入成功後才自動進後台）
 
+  // 確認此使用者是否為店主（admin 宣告或 /staff/{uid}===true），最多等 8 秒，逾時丟出錯誤
+  const checkStaff=async user=>{
+    const withTimeout=(pr,ms)=>Promise.race([pr,new Promise((_,rej)=>setTimeout(()=>rej(new Error("timeout")),ms))]);
+    try{
+      const tok=await withTimeout(user.getIdTokenResult(),8000);
+      if(tok&&tok.claims&&tok.claims.admin===true) return true;
+    }catch(e){}
+    if(!window.fbDb) throw new Error("資料庫未連接");
+    const snap=await withTimeout(window.fbDb.ref(`staff/${user.uid}`).once("value"),8000);
+    return snap.val()===true;
+  };
+
   // Firebase Auth：登入狀態決定能否進入店主模式
   useEffect(()=>{
     if(!window.fbAuth){setAuthReady(true);return;}
@@ -592,15 +604,12 @@ function App(){
         return;
       }
       let ok=false;
-      try{
-        const tok=await user.getIdTokenResult();
-        if(tok&&tok.claims&&tok.claims.admin===true) ok=true;
-      }catch(e){}
-      if(!ok&&window.fbDb){
-        try{
-          const snap=await window.fbDb.ref(`staff/${user.uid}`).once("value");
-          ok=snap.val()===true;
-        }catch(e){ console.warn("⚠️ 讀取店主名單失敗:", e.message); }
+      try{ ok=await checkStaff(user); }catch(e){
+        console.warn("⚠️ 確認店主身分失敗:", e.message);
+        // 網路慢／讀取失敗：不要登出，也不要說「不在名單」；需要時顯示錯誤讓使用者重試
+        setIsStaff(false); setAuthReady(true);
+        if(wantAdminRef.current){ wantAdminRef.current=false; setLoginErr("確認店主身分失敗或逾時，請檢查網路後再登入一次"); setMode("login"); }
+        return;
       }
       setIsStaff(ok);
       setAuthReady(true);
@@ -762,7 +771,12 @@ function App(){
 
   const adj=useCallback((id,d)=>setCart(c=>{const n=Math.max(0,(c[id]||0)+d);const x={...c};if(n===0)delete x[id];else x[id]=n;return x;}),[]);
   const adjA=(id,d)=>setAddonQty(a=>({...a,[id]:Math.max(0,(a[id]||0)+d)}));
-  const openStaff=()=>{ if(authUser&&isStaff) setMode("admin"); else { setLoginErr(""); setMode("login"); } };
+  const openStaff=()=>{
+    if(authUser&&isStaff){ setMode("admin"); return; }
+    // 已登入但還在確認店主身分（剛開網頁時）：先顯示「驗證身分中…」，確認完自動進後台
+    if(window.fbAuth&&window.fbAuth.currentUser&&!authReady){ wantAdminRef.current=true; setMode("admin"); return; }
+    setLoginErr(""); setMode("login");
+  };
   const doLogin=async ()=>{
     if(loggingIn)return;
     const email=(emailRef.current||"").trim(), pw=pwRef.current||"";
@@ -772,12 +786,29 @@ function App(){
     if(!window.fbAuth){setLoginErr("登入系統載入失敗，請重新整理頁面");return;}
     setLoggingIn(true);setLoginErr("");
     wantAdminRef.current=true;
+    let cred;
     try{
-      await window.fbAuth.signInWithEmailAndPassword(email,pw);
+      cred=await window.fbAuth.signInWithEmailAndPassword(email,pw);
       pwRef.current="";
     }catch(err){
       wantAdminRef.current=false;
-      setLoginErr(authErrMsg(err));
+      setLoginErr(authErrMsg(err)||"登入失敗，請再試一次");
+      setLoggingIn(false);
+      return;
+    }
+    // 不只靠 onAuthStateChanged（同一個帳號重複登入時它不會再觸發），這裡自己確認身分並進後台
+    const user=(cred&&cred.user)||window.fbAuth.currentUser;
+    try{
+      const ok=user?await checkStaff(user):false;
+      wantAdminRef.current=false;
+      if(ok){ setAuthUser(user); setIsStaff(true); setAuthReady(true); setLoginErr(""); setMode("admin"); }
+      else{
+        setLoginErr(`此帳號（${(user&&user.email)||""}）不在店主名單中，無法進入後台。`+(user?`\n請把 UID 加到 Firebase 的 /staff 名單：${user.uid}`:""));
+        window.fbAuth.signOut().catch(()=>{});
+      }
+    }catch(e){
+      wantAdminRef.current=false;
+      setLoginErr(e&&e.message==="timeout"?"確認店主身分逾時（超過 8 秒），請檢查網路後再試一次":"確認店主身分失敗："+((e&&e.message)||"未知錯誤")+"，請再試一次");
     }finally{ setLoggingIn(false); }
   };
   const doReset=async ()=>{
