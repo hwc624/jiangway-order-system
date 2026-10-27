@@ -1,0 +1,39 @@
+/* 江味齋 · 夜市霓虹 B — 套用到正式程式時補的版面細節（依 SPEC.md；色票只用 tokens.css 的 --jw-*） */
+#root{min-height:100vh}
+.jw a{color:inherit}
+.jw-tab{display:flex;align-items:center;gap:4px;text-decoration:none;color:inherit;white-space:nowrap}
+.jw-section{scroll-margin-top:130px}
+.jw-section__title{overflow-wrap:anywhere}
+.jw-cartbar-spacer{height:88px}
+.jw-cartbar__go[disabled]{opacity:.5;cursor:not-allowed}
+.jw-cartbar__sum small{font-size:var(--jw-fs-xs)}
+.jw-card__name .jw-badge{vertical-align:middle}
+.jw-dl dd{overflow-wrap:anywhere}
+.jw-qty__btn{color:var(--jw-text-main)}
+.jw-add[disabled]{opacity:.5}
+/* 選餐頁手機版：頁首+步驟條+分類頁籤壓到約 118px（原設計稿 143px） */
+@media (max-width:999px){
+  .jw-top--compact .jw-top__row{height:48px}
+  .jw-top--compact .jw-top__zh{font-size:var(--jw-fs-xl)}
+  .jw-top--compact .jw-top__en{margin-top:2px}
+  .jw-top--compact .jw-progress{padding-bottom:2px}
+  .jw-top--compact .jw-tabs{padding:4px var(--jw-sp-4) 6px}
+  .jw-top--compact .jw-badge{min-height:28px}
+}
+/* 店主後台：同一套深色，點擊區 ≥44px */
+.jw-adm button,.jw-adm select,.jw-adm input:not([type=checkbox]){min-height:var(--jw-tap)}
+.jw-adm input,.jw-adm select{color:var(--jw-text-main);background-color:var(--jw-bg-card)}
+.jw-adm ::placeholder{color:var(--jw-text-faint)}
+.jw input[type=date]{color-scheme:dark}
+@media (min-width:1000px){
+  .jw-section{scroll-margin-top:170px}
+  .jw-menu{padding:0}
+  .jw-cartbar-spacer{height:24px}
+  .jw-cartpanel{top:160px;max-height:calc(100vh - 180px);overflow:auto}
+  /* 取餐付款頁：兩欄做成等高卡片，按鈕貼齊右欄底部 */
+  .jw-split--eq{align-items:stretch;margin-top:var(--jw-sp-4)}
+  .jw-split--eq > .jw-col{display:flex;flex-direction:column;background:var(--jw-bg-card);border:1px solid var(--jw-line-main);border-radius:var(--jw-r-lg);padding:var(--jw-sp-2) var(--jw-sp-5) var(--jw-sp-5)}
+  .jw-split--eq .jw-col .jw-field:not(.jw-field--error) .jw-field__input,.jw-split--eq .jw-col .jw-seg__opt:not(.jw-seg__opt--active),.jw-split--eq .jw-col .jw-chip:not(.jw-chip--active),.jw-split--eq .jw-col .jw-panel{background:var(--jw-bg-raised)}
+  .jw-col__end{margin-top:auto;padding-top:var(--jw-sp-6)}
+}
+.jw-split > *{min-width:0}

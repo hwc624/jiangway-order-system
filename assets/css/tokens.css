@@ -1,0 +1,32 @@
+/* 江味齋 JiangWay · 夜市霓虹 Night-Market Neon · design tokens v1 */
+:root{
+  color-scheme:dark;
+  /* colour */
+  --jw-bg-page:#16171B;   --jw-bg-card:#212228;  --jw-bg-raised:#2A2B32; --jw-bg-tile:#2B1A1C;
+  --jw-text-main:#F5F1EA; --jw-text-muted:#B4ADA3; --jw-text-faint:#8E887F;
+  --jw-accent-main:#FF4A3D; --jw-accent-ink:#16171B; --jw-accent-soft:#3A1E1E;
+  --jw-amber-main:#FFB547; --jw-amber-ink:#16171B;  --jw-amber-soft:#3A2E1A;
+  --jw-success-main:#6FD6A0; --jw-success-soft:#1C3329;
+  --jw-error-main:#FF8A80;  --jw-error-soft:#3A1E1E;
+  --jw-line-main:#34353D;  --jw-line-strong:#75767F;
+  --jw-wa-main:#25D366;    --jw-wa-ink:#0B1F12;
+  /* glow (use sparingly: max 1 glowing element per viewport region) */
+  --jw-glow-accent:0 0 14px rgba(255,74,61,.55);
+  --jw-glow-amber:0 0 22px rgba(255,181,71,.35);
+  --jw-glow-text:0 0 6px rgba(255,74,61,.8),0 0 18px rgba(255,74,61,.45);
+  --jw-shadow-raised:0 8px 24px rgba(0,0,0,.45);
+  --jw-focus-ring:0 0 0 3px rgba(255,181,71,.9);
+  /* type: system stack only, 0 KB web fonts */
+  --jw-font-body:-apple-system,BlinkMacSystemFont,"PingFang TC","Noto Sans TC","Noto Sans CJK TC","Microsoft JhengHei",system-ui,sans-serif;
+  --jw-font-mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --jw-fs-xs:12px; --jw-fs-sm:13px; --jw-fs-md:15px; --jw-fs-lg:17px; --jw-fs-xl:20px; --jw-fs-2xl:24px; --jw-fs-3xl:28px;
+  /* spacing: 4px scale */
+  --jw-sp-1:4px; --jw-sp-2:8px; --jw-sp-3:12px; --jw-sp-4:16px; --jw-sp-5:20px; --jw-sp-6:24px; --jw-sp-8:32px; --jw-sp-10:40px;
+  /* radii */
+  --jw-r-sm:6px; --jw-r-md:12px; --jw-r-lg:16px; --jw-r-xl:20px; --jw-r-pill:999px;
+  /* sizing */
+  --jw-tap:44px; --jw-top-h:56px; --jw-content-w:560px;
+  /* motion */
+  --jw-ease:cubic-bezier(.2,.7,.2,1); --jw-dur-fast:120ms; --jw-dur-base:200ms;
+}
+@media (prefers-reduced-motion:reduce){:root{--jw-dur-fast:0ms;--jw-dur-base:0ms}}
