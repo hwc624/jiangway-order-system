@@ -244,6 +244,10 @@ function calcPromo(items,qty,promos){
   return{disc,discLines,addonList};
 }
 
+// 外送平台取貨（客人自己叫 Uber／Bolt 到店取餐）：資料庫規則只允許 pickup 為 外帶／外送／內用，
+// 所以新訂單仍存 pickup:"外送"，但不存地址與距離。舊的店家外送訂單一定有地址或距離，用這點區分。
+const isCourierOrder=o=>!!o&&o.pickup==="外送"&&!o.addr&&!o.distance;
+const pickupName=o=>isCourierOrder(o)?"外送平台取貨":(o&&o.pickup)||"";
 // 後台用：依「目前」菜單（含改價、新商品）、促銷、外送費重新計算訂單應收金額，抓出被竄改的訂單
 function repriceOrder(o,menuItems,promos,delivFee){
   const issues=[];
@@ -272,7 +276,9 @@ function repriceOrder(o,menuItems,promos,delivFee){
     addons+=price*(Number(a.qty)||0);
   });
   let fee=0;
-  if(o.pickup==="外送"){
+  if(isCourierOrder(o)){
+    if((Number(o.fee)||0)!==0) issues.push(`運費 R${Number(o.fee)||0}（外送平台取貨應為 R0）`);
+  }else if(o.pickup==="外送"){
     const dN=parseFloat(o.distance);
     const free=(sub-disc+addons)>=1500&&Number.isFinite(dN)&&dN>0&&dN<=5;
     fee=free?0:(Number(delivFee)||0);
@@ -727,11 +733,8 @@ function App(){
   const {disc,discLines,addonList}=calcPromo(cartItems,qty,promos);
   const addonTotal=addonList.reduce((s,p)=>s+(p.addonPrice*(addonQty[p.id]||0)),0);
   const totalBeforeDelivFee=sub-disc+addonTotal;
-  const distParsed=parseFloat(distance);
-  const distValid=Number.isFinite(distParsed)&&distParsed>0;
-  const distNum=distValid?distParsed:999; // 沒填、0、負數都視為無效（不能享免運）
-  const isFreeDelivery=totalBeforeDelivFee>=1500&&distNum<=5;
-  const fee=pickup==="外送"&&!isFreeDelivery?delivFee:0;
+  // 店家不再自行外送：沒有免費外送、沒有運費（2026-10 Hans 決定）
+  const fee=0;
   const total=sub-disc+addonTotal+fee;
   const belowMin=minOrder>0&&sub<minOrder;
   const activePromos=promos.filter(p=>p.active);
@@ -824,14 +827,9 @@ function App(){
     setStep(2);
   };
   const go4=()=>{
-    const a=(adRef.current||"").trim();
     // 驗證規則與原版相同（同樣的條件、同樣的訊息）；只是改成顯示在欄位旁，不再跳 alert
     const e={};
     if(cartItems.length===0) e._sum="⚠️ 購物車是空的（品項可能剛售完），請回上一步選餐 Your cart is empty";
-    if(pickup==="外送"){
-      if(!a) e.addr="請輸入外送地址 Please enter delivery address";
-      else if(!distValid) e.dist="請輸入正確的距離（大於 0 的數字）Please enter a valid distance (> 0 km)";
-    }
     if(!selDate) e.date="請選擇日期 Please select a date";
     else if(!time) e.time="請選擇時間 Please select a time";
     else if(!getSlots(selDate).includes(time)){e.time="這個時段已經過了，請重新選擇時間 This time slot is no longer available";setTime("");}
@@ -839,15 +837,15 @@ function App(){
     if(Object.keys(e).length){
       if(!e._sum) e._sum=`還有 ${n} 個欄位要填 · ${n} field${n>1?"s":""} need${n>1?"":"s"} attention`;
       setErrs(e);
-      focusErr(e.addr?"fAddr":e.dist?"fDist":e.date?"fDate":e.time?"fTime":"formErr");
+      focusErr(e.date?"fDate":e.time?"fTime":"formErr");
       return;
     }
     setErrs({});
-    setAddr(a);setNote(noRef.current);
+    setNote(noRef.current);
     setOrdNo(""); // 訂單編號提交後才由伺服器產生
     setStep(4);
   };
-  const pickLbl=()=>pickup==="外帶"?"外帶 Takeaway":pickup==="外送"?"外送 Delivery":"內用 Dine-in";
+  const pickLbl=()=>pickup==="外帶"?"外帶 Takeaway":pickup==="外送"?"外送平台取貨 Courier pickup":"內用 Dine-in";
   const payLbl=()=>pay==="現金"?"現金 Cash":pay==="餐券"?"餐券 Voucher":"EFT";
   const orderTxt=(no)=>{
     const em=pickup==="外送"?"🛵":pickup==="內用"?"🪑":"🥡";
@@ -857,18 +855,15 @@ function App(){
       `📅 ${new Date().toLocaleDateString("zh-TW",{year:"numeric",month:"long",day:"numeric",weekday:"short"})}`,
       "─────────────────────",
       `👤 ${nameVal}${phoneVal?` · ${phoneVal}`:""}`,
-      `${em} ${pickLbl()}${pickup==="外送"&&addr?`：${addr}`:""}`,
-      pickup==="外送"&&distance?`📍 距離：${distance} km`:null,
+      `${em} ${pickLbl()}`,
       (selDate||time)?`🗓 ${selDate?fmtDate(selDate):""} ${time}`.trim():null,
       `💳 ${payLbl()}`,
       pay==="EFT"&&eftProof?`📸 Proof sent: ${eftProof}`:null,
       "─────────────────────",
       ...cartItems.map(i=>`  ${i.name} ${i.nameEn} × ${qty(i.id)}　R${i.price*qty(i.id)}`),
       ...aLines,
-      (discLines.length||fee>0)?"─────────────────────":null,
+      discLines.length?"─────────────────────":null,
       ...discLines,
-      fee>0?`🛵 外送費：R${fee}`:null,
-      isFreeDelivery&&pickup==="外送"?`✨ 免費外送 Free Delivery (金額≥R1500 & 距離≤5km)`:null,
       "─────────────────────",
       disc>0?`小計：R${sub}`:null,
       disc>0?`折扣：-R${disc}`:null,
@@ -937,15 +932,12 @@ function App(){
       name:nameVal,
       phone:phoneVal,
       pickup,
-      addr,
-      distance,
       selDate:selDate?fmtKey(selDate):"", // 存成 "YYYY-MM-DD" 字串（Date 物件 Firebase 會直接丟掉）
       time,
       items:cartItems.map(i=>({id:i.id,name:i.name,nameEn:i.nameEn||"",qty:qty(i.id),price:i.price})), // id 讓後台可依菜單重新驗算
       addons:addonList.filter(p=>(addonQty[p.id]||0)>0).map(p=>({addonName:p.addonName,qty:addonQty[p.id],addonPrice:p.addonPrice})),
       disc,
-      fee,
-      isFreeDelivery,
+      fee, // 一律 0
       total,
       note,
       pay,
@@ -1184,7 +1176,7 @@ function App(){
         </div>}
         {adminTab==="settings"&&<div style={{background:"var(--jw-bg-card)",border:`1.5px solid ${BORDER}`,borderRadius:12,padding:"16px"}}>
           <Lbl t="最低消費 (R) — 0=不設限"/><input type="number" key={"min"+minOrder} defaultValue={minOrder} onChange={e=>{minRef.current=e.target.value;}} style={{...IS,fontSize:14}}/>
-          <Lbl t="外送費 (R) — 0=免費"/><input type="number" key={"fee"+delivFee} defaultValue={delivFee} onChange={e=>{feeRef.current=e.target.value;}} style={{...IS,fontSize:14}}/>
+          {/* 外送費欄位已隱藏（店家不再自行外送）；儲存時沿用資料庫既有的 delivFee，不覆蓋 */}{false&&<><Lbl t="外送費 (R) — 0=免費"/><input type="number" key={"fee"+delivFee} defaultValue={delivFee} onChange={e=>{feeRef.current=e.target.value;}} style={{...IS,fontSize:14}}/></>}
           <button onClick={()=>{
             const mo=minRef.current===null?minOrder:Math.max(0,parseFloat(minRef.current)||0);
             const df=feeRef.current===null?delivFee:Math.max(0,parseFloat(feeRef.current)||0);
@@ -1233,9 +1225,9 @@ function App(){
                         {suspicious&&<div className="price-alert" style={{fontSize:12,color:RED,fontWeight:500,marginTop:4,background:"var(--jw-accent-soft)",borderRadius:6,padding:"6px 8px"}}>
                           ⚠️ 金額異常：應收 R{chk.expected}，客人提交 R{Number.isFinite(chk.submitted)?chk.submitted:"?"}
                           {chk.issues.map((t,k)=><div key={k} style={{fontWeight:400,fontSize:11}}>・{t}</div>)}
-                          <div style={{fontWeight:400,fontSize:10,color:"var(--jw-text-muted)",marginTop:2}}>以目前的菜單、促銷、外送費計算；若下單後有改價或改促銷，可能誤報。出餐前請核對。</div>
+                          <div style={{fontWeight:400,fontSize:10,color:"var(--jw-text-muted)",marginTop:2}}>以目前的菜單、促銷計算（舊的店家外送訂單另核對外送費）；若下單後有改價或改促銷，可能誤報。出餐前請核對。</div>
                         </div>}
-                        <div style={{fontSize:12,color:"var(--jw-text-muted)",margin:"4px 0"}}>{o.ts} · {o.pickup} · {o.pay}</div>
+                        <div style={{fontSize:12,color:"var(--jw-text-muted)",margin:"4px 0"}}>{o.ts} · {pickupName(o)} · {o.pay}</div>
                         {(o.selDate||o.time)&&<div className="ord-when" style={{fontSize:12,color:NAVY,fontWeight:500,marginBottom:2}}>🗓 取餐：{typeof o.selDate==="string"?o.selDate:""} {o.time||""}</div>}
                         {o.phone&&<div style={{fontSize:12,color:"var(--jw-text-muted)"}}>📞 <a href={`tel:${o.phone}`} style={{color:"var(--jw-text-muted)"}}>{o.phone}</a></div>}
                         {o.pickup==="外送"&&(o.addr||o.distance)&&<div style={{fontSize:12,color:"var(--jw-text-muted)"}}>📍 {o.addr||""}{o.distance?`（${o.distance} km）`:""}</div>}
@@ -1397,21 +1389,13 @@ function App(){
             <div className="jw-block"><p className="jw-block__title">取餐方式 PICKUP METHOD</p>
               <div className="jw-seg">
                 <SBtn label="外帶" en="Takeaway" icon="bag" active={pickup==="外帶"} onClick={()=>setPickup("外帶")}/>
-                <SBtn label="外送" en="Delivery" icon="truck" active={pickup==="外送"} onClick={()=>setPickup("外送")}/>
+                <SBtn label="外送平台取貨" en="Courier · Uber／Bolt" icon="truck" active={pickup==="外送"} onClick={()=>setPickup("外送")}/>
                 <SBtn label="內用" en="Dine-in" icon="utensils" active={pickup==="內用"} onClick={()=>setPickup("內用")}/>
               </div>
-              {pickup==="外送"&&<>
-                <div className="jw-panel" style={{marginTop:10,fontSize:13,lineHeight:1.7,padding:"10px 12px"}}>
-                  🛵 免費外送 Free Delivery：金額滿R1500且距離5KM內<br/>
-                  <span style={{color:"var(--jw-text-muted)"}}>Free delivery for orders ≥R1500 within 5km radius</span>
-                  {totalBeforeDelivFee>0&&totalBeforeDelivFee<1500&&<><br/><span style={{color:"var(--jw-amber-main)"}}>💰 還差 R{Math.max(0, 1500-totalBeforeDelivFee)} 就符合免費外送</span></>}
-                  {totalBeforeDelivFee>=1500&&distNum>5&&<><br/><span style={{color:"var(--jw-amber-main)"}}>📍 距離超過5KM，需付外送費 R{delivFee}</span></>}
-                  {isFreeDelivery&&<><br/><span style={{color:"var(--jw-success-main)"}}>✓ 符合免費外送！Eligible for free delivery!</span></>}
-                  {!isFreeDelivery&&delivFee>0&&<><br/><span style={{color:"var(--jw-text-muted)"}}>外送費 Delivery fee：R{delivFee}</span></>}
-                </div>
-                <label className={fcls("addr")}><span className="jw-field__label">外送地址 <span>Delivery Address</span></span><span className="jw-field__control"><Ico n="truck" s={18}/><input id="fAddr" className="jw-field__input" type="text" defaultValue={adRef.current} onChange={e=>{adRef.current=e.target.value;clr("addr");}} placeholder="請輸入地址 Enter address" maxLength={300} aria-invalid={errs.addr?"true":undefined}/></span><FieldMsg k="addr"/></label>
-                <label className={fcls("dist")}><span className="jw-field__label">距離 <span>Distance (KM)</span></span><span className="jw-field__control"><input id="fDist" className="jw-field__input jw-field__input--plain" type="number" min="0" step="0.1" value={distance} onChange={e=>{setDistance(e.target.value);clr("dist");}} placeholder="例如：3.5" aria-invalid={errs.dist?"true":undefined}/></span><FieldMsg k="dist"/></label>
-              </>}
+              {pickup==="外送"&&<div id="courierNote" className="jw-panel" style={{marginTop:10,fontSize:14,lineHeight:1.7,padding:"12px 14px",borderColor:"var(--jw-amber-main)"}}>
+                🛵 請自行在 Uber、Bolt 等外送平台叫外送員，到店取餐。取餐時請告知訂單編號與姓名。店家不負責配送。<br/>
+                <span style={{color:"var(--jw-text-muted)",fontSize:13}}>Please book a courier yourself on Uber, Bolt or a similar app to collect your order from our shop. The courier should give your order number and name at pickup. We do not provide delivery.</span>
+              </div>}
             </div>
             <div className="jw-block"><p className="jw-block__title">{pickup==="內用"?"預計用餐日期 DINING DATE":"預計取餐日期 PICKUP DATE"}</p>
               <div id="fDate" className="jw-chips" tabIndex={-1} style={errs.date?{outline:"1.5px solid var(--jw-error-main)",borderRadius:12}:undefined}>
@@ -1454,8 +1438,7 @@ function App(){
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,paddingBottom:12,borderBottom:"1px dashed var(--jw-line-main)"}}><span style={{color:"var(--jw-text-muted)"}}>訂單編號 Order no.</span><span id="confirmOrdNo" className="jw-badge jw-badge--closed">訂單編號：提交後產生</span></div>
             <dl className="jw-dl">
               <Row label="顧客 Customer" val={`${nameVal}${phoneVal?` · ${phoneVal}`:""}`}/>
-              <Row label="取餐 Pickup" val={`${pickLbl()}${pickup==="外送"&&addr?`：${addr}`:""}`}/>
-              {pickup==="外送"&&distance&&<Row label="距離 Distance" val={`${distance} km`}/>}
+              <Row label="取餐 Pickup" val={pickLbl()}/>
               {selDate&&<Row label="日期 Date" val={isToday(selDate)?"今天 Today":fmtDate(selDate)}/>}
               {time&&<Row label="時間 Time" val={time}/>}
               <Row label="付款 Payment" val={payLbl()}/>
@@ -1468,8 +1451,6 @@ function App(){
               <div key={p.id} className="jw-line" style={{gridTemplateColumns:"1fr auto"}}><span style={{color:"var(--jw-amber-main)"}}>＋{p.addonName} × {addonQty[p.id]}</span><b style={{color:"var(--jw-amber-main)"}}>+R{p.addonPrice*addonQty[p.id]}</b></div>
             ))}
             {discLines.map((l,i)=><div key={i} style={{fontSize:13,color:"var(--jw-success-main)",marginTop:6}}>{l}</div>)}
-            {fee>0&&<div style={{display:"flex",justifyContent:"space-between",marginTop:6}}><span style={{color:"var(--jw-text-muted)"}}>外送費</span><span>+R{fee}</span></div>}
-            {isFreeDelivery&&pickup==="外送"&&<div style={{display:"flex",justifyContent:"space-between",marginTop:6,color:"var(--jw-success-main)"}}><span>✨ 免費外送</span><span style={{fontWeight:700}}>-R0</span></div>}
             {disc>0&&<div style={{display:"flex",justifyContent:"space-between",marginTop:8}}><span style={{color:"var(--jw-text-muted)"}}>小計</span><s style={{color:"var(--jw-text-muted)"}}>R{sub}</s></div>}
             <div className="jw-total"><span style={{fontWeight:800}}>合計 Total</span><b id="confirmTotal">R{total}</b></div>
             {note&&<div style={{fontSize:13,color:"var(--jw-text-muted)",borderTop:"1px dashed var(--jw-line-main)",paddingTop:8}}>備註：{note}</div>}
