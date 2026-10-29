@@ -178,39 +178,79 @@ function cmpOrdersDesc(a,b){
   return ka<kb?1:ka>kb?-1:0;
 }
 
-// ===== 可靠存單：失敗/逾時自動重試，存入前完整保存在客人手機（jw_pending_order），同一個 push key 絕不重複 =====
-const PENDING_KEY="jw_pending_order";
-function loadPending(){ try{ const v=JSON.parse(localStorage.getItem(PENDING_KEY)||"null"); return v&&v.key&&v.order?v:null; }catch(e){ return null; } }
-function savePending(v){ try{ localStorage.setItem(PENDING_KEY,JSON.stringify(v)); }catch(e){} }
-function clearPending(key){ try{ const v=loadPending(); if(!v||!key||v.key===key) localStorage.removeItem(PENDING_KEY); }catch(e){} }
+// ===== 可靠存單：失敗/逾時自動重試；伺服器確認前，每筆訂單各自完整保存在客人手機（jw_pending_orders，以 push key 為索引的多筆佇列），同一個 key 絕不重複 =====
+// 每筆：{key,order,txt,savedAt,sent:是否曾經送出過 set(),status:"pending"|"rejected"|"unsure"}
+const QUEUE_KEY="jw_pending_orders", OLD_PENDING_KEY="jw_pending_order";
+const PENDING_MAX_AGE=3*24*3600*1000;
+function loadQueue(){
+  let q={};
+  try{ const v=JSON.parse(localStorage.getItem(QUEUE_KEY)||"{}"); if(v&&typeof v==="object"&&!Array.isArray(v)) q=v; }catch(e){}
+  // 舊版單格格式 → 搬進佇列（舊格式不知道是否送出過，保守當作「曾送出」，被拒時只會顯示「可能已送達」）
+  try{
+    const o=JSON.parse(localStorage.getItem(OLD_PENDING_KEY)||"null");
+    if(o&&o.key&&o.order){ if(!q[o.key]) q[o.key]={...o,sent:true,status:"pending"}; localStorage.setItem(QUEUE_KEY,JSON.stringify(q)); }
+    localStorage.removeItem(OLD_PENDING_KEY);
+  }catch(e){}
+  for(const k of Object.keys(q)){ const e=q[k]; if(!e||!e.key||!e.order) delete q[k]; }
+  return q;
+}
+function writeQueue(q){ try{ localStorage.setItem(QUEUE_KEY,JSON.stringify(q)); }catch(e){} }
+function getPending(key){ return loadQueue()[key]||null; }
+function savePending(v){ const q=loadQueue(); q[v.key]={sent:false,status:"pending",...q[v.key],...v}; writeQueue(q); }
+function updatePending(key,patch){ const q=loadQueue(); if(q[key]){ q[key]={...q[key],...patch}; writeQueue(q); } }
+function clearPending(key){ if(!key) return; const q=loadQueue(); if(q[key]){ delete q[key]; writeQueue(q); } }
 // 去掉 undefined / NaN 等 Firebase 不接受的值，避免 set() 同步丟錯
 function cleanForDb(o){ return JSON.parse(JSON.stringify(o,(k,v)=>(typeof v==="number"&&!isFinite(v))?undefined:v)); }
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-// 回傳 "ok"（伺服器已確認）/ "dup"（此 key 已存在＝先前已存好）/ "rejected"（規則拒絕）/ "timeout"（仍未確認，資料保留在手機待重試）
-// fresh=true 表示這個 key 是剛產生、從沒送過：此時 PERMISSION_DENIED 代表資料被規則拒絕；否則代表已存在
+// 回傳 "ok"（伺服器已確認）/ "rejected"（從沒送出過就被規則拒絕＝確定沒存）/ "unsure"（曾送出過、這次被拒：可能先前已存好，也可能資料被拒，客人無讀取權限無法分辨）/ "timeout"（仍未確認，留在手機待重試）
+// 只有 "ok" 會把訂單從手機佇列移除；"rejected"/"unsure" 會保留，直到客人自己關掉提示
 const inflight={}; // 同一頁面裡同一個 key 只會有一個 set() 在跑
-async function saveOrderReliably(key,order,{fresh=false,attempts=3,waits=[4000,8000,15000],onStatus}={}){
+// 連線中斷次數：set() 送出後若曾斷線，SDK 會在重連後自動重送；若第一次其實已存好（只是回覆沒收到），重送會被拒，此時不能斷定是「被拒收」
+let connDrops=0, connWatch=false;
+function watchConn(){ if(connWatch||!window.fbDb) return; connWatch=true; let was=false;
+  window.fbDb.ref(".info/connected").on("value",s=>{ const v=s.val()===true; if(was&&!v) connDrops++; was=v; }); }
+async function saveOrderReliably(key,order,{attempts=3,waits=[4000,8000,15000],onStatus}={}){
   if(!window.fbDb) return "timeout";
   const ref=window.fbDb.ref(`orders/${key}`);
   for(let i=0;i<attempts;i++){
     if(!inflight[key]){
+      const ent=getPending(key);
+      watchConn();
+      const sentBefore=!!(ent?ent.sent:true), drops0=connDrops;
+      if(ent&&!ent.sent) updatePending(key,{sent:true});
       let pr;
       try{ pr=ref.set(cleanForDb(order)); }
       catch(e){ console.error("❌ set() 同步錯誤:",e.message); pr=Promise.reject(e); }
       inflight[key]=pr.then(()=>"ok",err=>{
         const code=String((err&&(err.code||err.message))||"");
         console.error("❌ 存訂單失敗:",code);
-        return /permission/i.test(code)?((fresh&&i===0)?"rejected":"dup"):"error";
+        return /permission/i.test(code)?((sentBefore||connDrops!==drops0)?"unsure":"rejected"):"error";
       }).then(r=>{ delete inflight[key]; return r; });
     }
     const r=await Promise.race([inflight[key],sleep(waits[i]||waits[waits.length-1]).then(()=>"wait")]);
-    if(r==="ok"||r==="dup"){ clearPending(key); return r; }
-    if(r==="rejected"){ return r; }
+    if(r==="ok"){ clearPending(key); return r; }
+    if(r==="rejected"||r==="unsure"){ updatePending(key,{status:r}); return r; }
     if(onStatus) onStatus("retrying",i+1);
     if(r==="error") await sleep(1000*(i+1));  // 失敗：退避後重送同一個 key
     // r==="wait"：前一個 set 仍在佇列中（多半是離線），繼續等它，不重複送
   }
   return "timeout";
+}
+// 逐筆補送佇列裡還在等待的訂單（同時只跑一輪；每筆用自己的 key）
+let flushing=null;
+function flushQueue(onEach,opts){
+  if(flushing) return flushing;
+  flushing=(async()=>{
+    const q=loadQueue();
+    for(const e of Object.values(q).sort((a,b)=>(a.savedAt||0)-(b.savedAt||0))){
+      if(Date.now()-(e.savedAt||0)>PENDING_MAX_AGE){ clearPending(e.key); continue; } // 超過 3 天不再補送
+      if(e.status!=="pending"){ onEach&&onEach(e,e.status); continue; }
+      onEach&&onEach(e,"saving");
+      const r=await saveOrderReliably(e.key,e.order,opts);
+      onEach&&onEach(e,r);
+    }
+  })().finally(()=>{flushing=null;});
+  return flushing;
 }
 
 // 舊版本留在客人手機上的 localStorage（訂單編號、訂單、售完）已不再使用，啟動時清掉一次
@@ -575,9 +615,12 @@ function App(){
   const [ordNo,setOrdNo]=useState("");
   const [submittedTxt,setSubmittedTxt]=useState(""); // step 5 用的訂單文字（提交時凍結）
   const [submitting,setSubmitting]=useState(false); // 防止重複提交
-  const [saveStatus,setSaveStatus]=useState(""); // 提交後訂單是否成功存入：saving / ok / failed / timeout / rejected
+  const [submitErr,setSubmitErr]=useState(""); // 確認頁送出前的再檢查訊息
+  const [saveStatus,setSaveStatus]=useState(""); // 提交後訂單是否成功存入：saving / ok / timeout / rejected / unsure
   const [pendingKey,setPendingKey]=useState("");   // 目前這筆訂單的 Firebase key（重試時沿用，避免重複）
-  const [pendingBanner,setPendingBanner]=useState(null); // 開頁時補送上次未送出的訂單：{no,status}
+  const [pendingList,setPendingList]=useState([]); // 補送手機裡先前未送出的訂單：[{key,no,txt,status}]
+  const curKeyRef=useRef(""); // 目前完成頁上這筆訂單的 key
+  const [setErrMsg,setSetErrMsg]=useState(""); // 設定頁驗證訊息
   const [todayCounter,setTodayCounter]=useState(null);   // 後台：今天 order_counters 的值
   const [pForm,setPForm]=useState({type:"order_discount",label:"",pct:"",itemId:"",addonName:"",addonPrice:""});
   const [distance,setDistance]=useState("");
@@ -653,33 +696,32 @@ function App(){
     return ()=>dbRef.off("value",unsubscribe);
   },[]);
 
-  // 開頁時：上次有未被伺服器確認的訂單 → 安靜地補送一次（同一個 key，不會重複）
-  useEffect(()=>{
-    const p=loadPending();
-    if(!p||!window.fbDb) return;
-    if(Date.now()-(p.savedAt||0)>3*24*3600*1000){ clearPending(p.key); return; } // 超過 3 天不再補送
-    setPendingBanner({no:p.order.no,status:"saving"});
-    saveOrderReliably(p.key,p.order,{fresh:false,attempts:4}).then(r=>{
-      setPendingBanner({no:p.order.no,status:(r==="ok"||r==="dup")?"ok":"failed"});
+  // 開頁時、連線恢復時：逐筆補送手機佇列裡未被伺服器確認的訂單（每筆各自的 key，不會重複）
+  const onQueueResult=(e,r)=>{
+    const st=r==="ok"?"ok":r==="saving"?"saving":r==="rejected"?"rejected":r==="unsure"?"unsure":"failed";
+    if(e.key===curKeyRef.current){ // 目前完成頁上的這一筆
+      if(r==="ok"||r==="rejected"||r==="unsure") setSaveStatus(r);
+      return;
+    }
+    setPendingList(l=>{
+      const i=l.findIndex(x=>x.key===e.key);
+      const item={key:e.key,no:e.order.no,txt:e.txt||"",status:st};
+      if(i<0) return [...l,item];
+      if(st==="failed"&&l[i].status==="ok") return l;
+      const n=[...l]; n[i]=item; return n;
     });
-  },[]);
-
-  // 連線恢復時，自動再送一次還沒確認的訂單
+  };
   useEffect(()=>{
     if(!window.fbDb) return;
+    flushQueue(onQueueResult,{attempts:4});
     const cRef=window.fbDb.ref(".info/connected");
-    const h=cRef.on("value",snap=>{
-      if(snap.val()!==true) return;
-      const p=loadPending();
-      if(!p) return;
-      saveOrderReliably(p.key,p.order,{fresh:false}).then(r=>{
-        const ok=r==="ok"||r==="dup";
-        setPendingKey(k=>{ if(k===p.key&&ok) setSaveStatus("ok"); return k; });
-        setPendingBanner(b=>b&&b.no===p.order.no?{...b,status:ok?"ok":b.status}:b);
-      });
-    });
+    const h=cRef.on("value",snap=>{ if(snap.val()===true) flushQueue(onQueueResult); });
     return ()=>cRef.off("value",h);
   },[]);
+  const dismissPending=item=>{
+    if(item.status==="rejected"||item.status==="unsure") clearPending(item.key); // 客人看過並關掉，才從手機移除
+    setPendingList(l=>l.filter(x=>x.key!==item.key));
+  };
 
   // 後台：讀今天的訂單編號計數器，用來比對有沒有訂單漏存
   useEffect(()=>{
@@ -901,6 +943,7 @@ function App(){
     // 驗證規則與原版相同（同樣的條件、同樣的訊息）；只是改成顯示在欄位旁，不再跳 alert
     const e={};
     if(cartItems.length===0) e._sum="⚠️ 購物車是空的（品項可能剛售完），請回上一步選餐 Your cart is empty";
+    else if(belowMin) e._sum=`⚠️ 未達最低消費 R${minOrder}（目前 R${sub}，可能有品項剛售完），請回上一步加點 · Below the minimum order of R${minOrder}`;
     if(!selDate) e.date="請選擇日期 Please select a date";
     else if(!time) e.time="請選擇時間 Please select a time";
     else if(!getSlots(selDate).includes(time)){e.time="這個時段已經過了，請重新選擇時間 This time slot is no longer available";setTime("");}
@@ -914,6 +957,7 @@ function App(){
     setErrs({});
     setNote(noRef.current);
     setOrdNo(""); // 訂單編號提交後才由伺服器產生
+    setSubmitErr("");
     setStep(4);
   };
   const pickLbl=()=>pickup==="外帶"?"外帶 Takeaway":pickup==="外送"?"外送平台取貨 Courier pickup":"內用 Dine-in";
@@ -950,15 +994,17 @@ function App(){
     return /micromessenger|FBAN|FBAV|Instagram|Line\/|LinkedInApp|Twitter/i.test(ua);
   };
   const retrySave=async ()=>{
-    const p=loadPending();
+    const p=getPending(pendingKey);
     if(!p){ setSaveStatus("ok"); return; } // 已經存好
     setSaveStatus("saving");
-    const r=await saveOrderReliably(p.key,p.order,{fresh:false});
-    setSaveStatus((r==="ok"||r==="dup")?"ok":"timeout");
+    const r=await saveOrderReliably(p.key,p.order);
+    setSaveStatus(r==="timeout"?"timeout":r);
   };
   const sendWA=async ()=>{
     if(submitting)return; // 防止連點造成重複訂單
-    if(cartItems.length===0){alert("⚠️ 購物車是空的（品項可能剛售完），請回上一步選餐\nYour cart is empty");return;}
+    if(cartItems.length===0){setSubmitErr("⚠️ 購物車是空的（品項可能剛售完），請按「返回修改」回去選餐 · Your cart is empty (items may have just sold out). Tap “Back” to choose again.");return;}
+    if(belowMin){setSubmitErr(`⚠️ 未達最低消費 R${minOrder}（目前 R${sub}，可能有品項剛售完），請按「返回修改」加點 · Below the minimum order of R${minOrder} (now R${sub}; an item may have sold out). Tap “Back” to add more.`);return;}
+    setSubmitErr("");
     setSubmitting(true);
 
     // 用今天的本地日期作為 key（例如 "2026-06-09"）
@@ -1027,13 +1073,13 @@ function App(){
     let key="";
     try{ key=window.fbDb?window.fbDb.ref("orders").push().key:""; }catch(e){}
     if(!key) key="L"+Date.now().toString(36)+Math.random().toString(36).slice(2,8); // 沒有資料庫時仍保留訂單
-    savePending({key,order:newOrder,txt:frozenTxt,savedAt:Date.now()}); // 伺服器確認前，完整訂單留在手機
-    setPendingKey(key);
+    savePending({key,order:newOrder,txt:frozenTxt,savedAt:Date.now(),sent:false,status:"pending"}); // 伺服器確認前，完整訂單留在手機
+    setPendingKey(key); curKeyRef.current=key;
     setSaveStatus("saving");
     // 先最多等 3 秒；未確認就先顯示警告頁，背景繼續重試
-    const savePromise=saveOrderReliably(key,newOrder,{fresh:true});
+    const savePromise=saveOrderReliably(key,newOrder);
     const first=await Promise.race([savePromise,sleep(3000).then(()=>"timeout")]);
-    const norm=r=>(r==="ok"||r==="dup")?"ok":r==="rejected"?"rejected":"timeout";
+    const norm=r=>(r==="ok"||r==="rejected"||r==="unsure")?r:"timeout";
     const result=norm(first);
     setSaveStatus(result);
     if(first==="timeout") savePromise.then(r=>setSaveStatus(norm(r))); // 之後若存好了，更新提示
@@ -1048,7 +1094,7 @@ function App(){
     if(navigator.clipboard){navigator.clipboard.writeText(txt).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2500);});}
     else{const t=document.createElement("textarea");t.value=txt;document.body.appendChild(t);t.select();document.execCommand("copy");document.body.removeChild(t);setCopied(true);setTimeout(()=>setCopied(false),2500);}
   };
-  const reset=()=>{setErrs({});nRef.current="";phRef.current="";adRef.current="";noRef.current="";setStep(1);setNameVal("");setPhoneVal("");setCart({});setAddonQty({});setPickup("外帶");setAddr("");setPay("現金");setSelDate(null);setTime("");setNote("");setCopied(false);setOrdNo("");setDistance("");setEftProof("");setEftProofFile(null);setSubmittedTxt("");setSubmitting(false);setSaveStatus("");setPendingKey("");};
+  const reset=()=>{setErrs({});nRef.current="";phRef.current="";adRef.current="";noRef.current="";setStep(1);setNameVal("");setPhoneVal("");setCart({});setAddonQty({});setPickup("外帶");setAddr("");setPay("現金");setSelDate(null);setTime("");setNote("");setCopied(false);setOrdNo("");setDistance("");setEftProof("");setEftProofFile(null);setSubmittedTxt("");setSubmitting(false);setSaveStatus("");setPendingKey("");curKeyRef.current="";setSubmitErr("");};
   const addPromo=()=>{
     if(!pForm.label){alert("⚠️ 請輸入促銷名稱");return;}
     if(pForm.type!=="addon"&&!pForm.pct){alert("⚠️ 請輸入折扣 %");return;}
@@ -1254,14 +1300,19 @@ function App(){
           </div>}
         </div>}
         {adminTab==="settings"&&<div style={{background:"var(--jw-bg-card)",border:`1.5px solid ${BORDER}`,borderRadius:12,padding:"16px"}}>
-          <Lbl t="最低消費 (R) — 0=不設限"/><input type="number" key={"min"+minOrder} defaultValue={minOrder} onChange={e=>{minRef.current=e.target.value;}} style={{...IS,fontSize:14}}/>
-          {/* 外送費欄位已隱藏（店家不再自行外送）；儲存時沿用資料庫既有的 delivFee，不覆蓋 */}{false&&<><Lbl t="外送費 (R) — 0=免費"/><input type="number" key={"fee"+delivFee} defaultValue={delivFee} onChange={e=>{feeRef.current=e.target.value;}} style={{...IS,fontSize:14}}/></>}
+          <Lbl t="最低消費 (R) — 0=不設限"/><input id="setMinOrder" type="number" min="0" key={"min"+minOrder} defaultValue={minOrder} onChange={e=>{minRef.current=e.target.value;setSetErrMsg("");}} style={{...IS,fontSize:14}}/>
+          {/* 外送費欄位已隱藏（店家不再自行外送）；儲存時沿用資料庫既有的 delivFee，不覆蓋 */}{false&&<><Lbl t="外送費 (R) — 0=免費"/><input type="number" key={"fee"+delivFee} defaultValue={delivFee} onChange={e=>{feeRef.current=e.target.value;setSetErrMsg("");}} style={{...IS,fontSize:14}}/></>}
           <button onClick={()=>{
-            const mo=minRef.current===null?minOrder:Math.max(0,parseFloat(minRef.current)||0);
-            const df=feeRef.current===null?delivFee:Math.max(0,parseFloat(feeRef.current)||0);
+            const bad=v=>v!==null&&(String(v).trim()===""||!isFinite(Number(v))||Number(v)<0);
+            if(bad(minRef.current)){setSetErrMsg("⚠️ 最低消費請填 0 或正數（0＝不設限），尚未儲存");return;}
+            if(bad(feeRef.current)){setSetErrMsg("⚠️ 外送費請填 0 或正數，尚未儲存");return;}
+            const mo=minRef.current===null?minOrder:Number(minRef.current);
+            const df=feeRef.current===null?delivFee:Number(feeRef.current);
+            setSetErrMsg("");
             if(!window.fbDb){alert("❌ 資料庫未連線");return;}
             window.fbDb.ref("settings").set({minOrder:mo,delivFee:df}).then(()=>{minRef.current=null;feeRef.current=null;alert("✅ 已儲存！所有客人都會套用");}).catch(fbErr("儲存設定"));
           }} style={{width:"100%",background:"var(--jw-bg-raised)",color:"var(--jw-text-main)",border:"none",borderRadius:8,padding:"12px",fontSize:14,cursor:"pointer",marginTop:14}}>儲存 Save</button>
+          {setErrMsg&&<div id="settingsErr" role="alert" style={{marginTop:10,color:"var(--jw-error-main)",background:"var(--jw-error-soft)",border:"1.5px solid var(--jw-error-main)",borderRadius:8,padding:"8px 10px",fontSize:14,fontWeight:600}}>{setErrMsg}</div>}
         </div>}
         {adminTab==="orders"&&<>
           {todayCounter&&(()=>{
@@ -1270,11 +1321,11 @@ function App(){
             const isFb=no=>/^9[0-9]{3}$/.test(String(no||""));
             const fallback=todays.filter(o=>isFb(o.no));
             const present=new Set(todays.filter(o=>!isFb(o.no)).map(o=>parseInt(o.no,10)));
-            const missing=[]; for(let i=1;i<=N;i++) if(!present.has(i)) missing.push(String(i).padStart(4,"0"));
+            const missing=[]; let missingN=0; for(let i=1;i<=Math.min(N,10000);i++) if(!present.has(i)){ missingN++; if(missing.length<50) missing.push(String(i).padStart(4,"0")); }
             const normalCount=M-fallback.length;
             if(!(N>normalCount&&missing.length)&&!fallback.length) return null;
             return <div id="orderGapWarn" role="alert" style={{background:"var(--jw-error-soft)",border:"2px solid var(--jw-error-main)",borderRadius:10,padding:"10px 12px",marginBottom:12,fontSize:14,color:"var(--jw-error-main)",lineHeight:1.6,fontWeight:600}}>
-              {N>normalCount&&missing.length>0&&<div>⚠️ 今天已發出 {N} 個編號，但後台只收到 {normalCount} 筆，可能有訂單未存入，請對照 WhatsApp。<br/>缺少的編號：{missing.map(x=>"#"+x).join("、")}（也可能是已被刪除）</div>}
+              {N>normalCount&&missing.length>0&&<div>⚠️ 今天已發出 {N} 個編號，但後台只收到 {normalCount} 筆，可能有訂單未存入，請對照 WhatsApp。<br/>缺少的編號：{missing.map(x=>"#"+x).join("、")}{missingN>missing.length?`…等共 ${missingN} 個`:""}（也可能是已被刪除）</div>}
               {fallback.length>0&&<div>⚠️ 今天有 {fallback.length} 筆備援編號訂單（{fallback.map(o=>"#"+o.no).join("、")}），請核對 WhatsApp。</div>}
             </div>;
           })()}
@@ -1388,12 +1439,19 @@ function App(){
       {TopBar({gear:true,showStep:true,extra:step===2&&<nav className="jw-tabs" aria-label="菜單分類">{effectiveMenu.map((cat,ci)=><a key={cat.cat} href={`#jw-sec-${ci}`} data-sec={ci} className={"jw-tab"+(ci===activeSec?" jw-tab--active":"")} aria-current={ci===activeSec?"true":undefined} onClick={e=>{e.preventDefault();const s=document.getElementById(`jw-sec-${ci}`);if(s)s.scrollIntoView({behavior:window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth"});}}>{CAT_SHORT(cat.cat)}</a>)}</nav>})}
       {promoBar}
 
-        {pendingBanner&&step!==5&&<div id="pendingBanner" role="status" style={{position:"relative",maxWidth:960,margin:"12px auto 0",width:"calc(100% - 32px)",padding:"10px 40px 10px 14px",borderRadius:10,fontSize:14,lineHeight:1.5,fontWeight:600,background:pendingBanner.status==="ok"?"var(--jw-success-soft)":"var(--jw-amber-soft)",border:`1.5px solid ${pendingBanner.status==="ok"?"var(--jw-success-main)":"var(--jw-amber-main)"}`,color:pendingBanner.status==="ok"?"var(--jw-success-main)":"var(--jw-amber-main)"}}>
-          {pendingBanner.status==="ok"?<>✅ 上次的訂單 #{pendingBanner.no} 已補送到店家 · Your previous order #{pendingBanner.no} has now reached the shop.</>
-           :pendingBanner.status==="saving"?<>⏳ 正在補送上次未送出的訂單 #{pendingBanner.no}… · Resending your previous order #{pendingBanner.no}…</>
-           :<>⚠️ 上次的訂單 #{pendingBanner.no} 仍未送達店家，網路恢復後會再試；如急用請用 WhatsApp 聯絡店家。 · Previous order #{pendingBanner.no} has not reached the shop yet; please contact us on WhatsApp if urgent.</>}
-          <button onClick={()=>setPendingBanner(null)} aria-label="關閉 Close" style={{position:"absolute",top:4,right:4,width:36,height:36,background:"none",border:"none",color:"inherit",fontSize:16,cursor:"pointer"}}>✕</button>
-        </div>}
+        {step!==5&&pendingList.map(pb=>{
+          const good=pb.status==="ok", busy=pb.status==="saving";
+          const tone=good?"success":busy?"amber":pb.status==="rejected"?"error":"amber";
+          const waHref=pb.txt?`https://wa.me/${WA}?text=${encodeURIComponent(pb.txt)}`:`https://wa.me/${WA}`;
+          return <div key={pb.key} className="pendingBanner" data-status={pb.status} role={good||busy?"status":"alert"} style={{position:"relative",maxWidth:960,margin:"12px auto 0",width:"calc(100% - 32px)",padding:"10px 40px 10px 14px",borderRadius:10,fontSize:14,lineHeight:1.5,fontWeight:600,background:`var(--jw-${tone}-soft)`,border:`1.5px solid var(--jw-${tone}-main)`,color:`var(--jw-${tone}-main)`}}>
+          {good?<>✅ 上次的訂單 #{pb.no} 已補送到店家 · Your previous order #{pb.no} has now reached the shop.</>
+           :busy?<>⏳ 正在補送上次未送出的訂單 #{pb.no}… · Resending your previous order #{pb.no}…</>
+           :pb.status==="rejected"?<>⚠️ 上次的訂單 #{pb.no} <strong>沒有送達店家</strong>（系統無法接受這筆訂單）。請按下方按鈕用 WhatsApp 傳送。 · Previous order #{pb.no} did NOT reach the shop (the system could not accept it). Please send it via WhatsApp.</>
+           :pb.status==="unsure"?<>⚠️ 上次的訂單 #{pb.no} <strong>可能已送達</strong>，但無法確認。請向店家確認編號 #{pb.no}，或按下方按鈕用 WhatsApp 傳送。 · Previous order #{pb.no} may already have reached the shop, but we could not confirm it. Please check order #{pb.no} with the shop, or send it via WhatsApp.</>
+           :<>⚠️ 上次的訂單 #{pb.no} 仍未送達店家，網路恢復後會再試；如急用請用 WhatsApp 傳送。 · Previous order #{pb.no} has not reached the shop yet; it will retry when you are back online, or send it via WhatsApp.</>}
+          {!good&&!busy&&<a className="jw-btn jw-btn--wa pendingWa" href={waHref} style={{marginTop:8,textDecoration:"none",minHeight:44,fontSize:14,color:"var(--jw-wa-ink)"}}><Ico n="msg" s={18}/>用 WhatsApp 傳送 #{pb.no} · Send via WhatsApp</a>}
+          <button onClick={()=>dismissPending(pb)} aria-label="關閉 Close" style={{position:"absolute",top:4,right:4,width:44,height:44,background:"none",border:"none",color:"inherit",fontSize:16,cursor:"pointer"}}>✕</button>
+        </div>;})}
         {step===1&&<main className="jw-page"><div className="jw-split">
           <div>
             <h1 className="jw-h">歡迎點餐<small>Welcome · Order online</small></h1>
@@ -1559,6 +1617,7 @@ function App(){
             <div id="waPreview" style={{userSelect:"none",WebkitUserSelect:"none",background:"var(--jw-bg-card)",border:"1px solid var(--jw-line-main)",borderRadius:12,padding:"12px 14px",fontFamily:"var(--jw-font-mono)",fontSize:12,whiteSpace:"pre-wrap",lineHeight:1.7,overflowWrap:"anywhere"}}>{orderTxt()}</div>
           </details>
           <p className="jw-field__help" style={{textAlign:"center",margin:"16px 0 12px",fontSize:14}}>提交後會自動開啟 WhatsApp，請按「傳送」完成下單<br/>After submitting, WhatsApp will open — tap Send to complete your order</p>
+          {submitErr&&<div className="jw-formerror" role="alert" id="submitErr" style={{marginBottom:10}}><Ico n="alert" s={18}/><span>{submitErr}</span></div>}
           <button onClick={sendWA} disabled={submitting} className="jw-btn jw-btn--wa" style={submitting?{opacity:.6,cursor:"not-allowed"}:undefined}><Ico n="msg"/>{submitting?"處理中… Processing…":"✓ 提交並傳送 WhatsApp"}</button>
           <div className="jw-actions" style={{gridTemplateColumns:"1fr 1fr",marginTop:10}}>
             <button onClick={()=>setStep(3)} className="jw-btn jw-btn--secondary"><Ico n="left" s={18}/>返回修改</button>
@@ -1570,13 +1629,15 @@ function App(){
         {step===5&&<main className="jw-page">
           <section className={"jw-status "+(saveStatus==="ok"?"jw-status--success":"jw-status--warning")} role="status">
             <div className="jw-status__ico"><Ico n={saveStatus==="ok"?"check":"tri"} s={44}/></div>
-            <h1 className="jw-status__title">{saveStatus==="ok"?"訂單已提交！":saveStatus==="saving"?"訂單送出中…":"訂單尚未送達店家"}</h1>
-            <p className="jw-status__text">{saveStatus==="ok"?"Order Submitted!":saveStatus==="saving"?"Sending your order…":"Your order has NOT reached the shop yet"}</p>
+            <h1 className="jw-status__title">{saveStatus==="ok"?"訂單已提交！":saveStatus==="saving"?"訂單送出中…":saveStatus==="unsure"?"訂單可能已送達，請確認":"訂單尚未送達店家"}</h1>
+            <p className="jw-status__text">{saveStatus==="ok"?"Order Submitted!":saveStatus==="saving"?"Sending your order…":saveStatus==="unsure"?"Your order may have reached the shop — please confirm":"Your order has NOT reached the shop yet"}</p>
             <p style={{marginTop:14}}><span style={{color:"var(--jw-text-muted)",marginRight:8}}>訂單編號</span><span className="jw-ordno">#{ordNo}</span></p>
           </section>
           {saveStatus!=="ok"&&<div id="saveWarn" role="alert" style={{background:saveStatus==="saving"?"var(--jw-amber-soft)":"var(--jw-error-soft)",border:`2px solid ${saveStatus==="saving"?"var(--jw-amber-main)":"var(--jw-error-main)"}`,borderRadius:14,padding:"14px 16px",marginBottom:16,fontSize:15,color:saveStatus==="saving"?"var(--jw-amber-main)":"var(--jw-error-main)",lineHeight:1.6}}>
             {saveStatus==="saving"
               ?<>⏳ 正在把訂單 #{ordNo} 送到店家，請稍候，<strong>不要關閉此頁</strong>。<br/><span style={{fontSize:13,opacity:.9}}>Sending order #{ordNo} to the shop… please keep this page open.</span></>
+              :saveStatus==="unsure"
+              ?<>⚠️ 訂單 #{ordNo} <strong>可能已送達</strong>，但無法確認。請向店家確認編號 #{ordNo}，或按下方綠色按鈕用 WhatsApp 傳送。<br/><span style={{fontSize:13,opacity:.9}}>Order #{ordNo} may already have reached the shop, but we could not confirm it. Please check order #{ordNo} with the shop, or send it via WhatsApp below.</span></>
               :saveStatus==="rejected"
               ?<>⚠️ 訂單 #{ordNo} <strong>尚未送達店家</strong>（系統無法接受此訂單）。請按下方綠色按鈕用 WhatsApp 傳送訂單，並截圖此畫面。<br/><span style={{fontSize:13,opacity:.9}}>Order #{ordNo} has NOT reached the shop (the system could not accept it). Please send it via WhatsApp below and take a screenshot.</span></>
               :<>⚠️ 訂單 #{ordNo} <strong>尚未送達店家</strong>（網路不穩）。<br/>1. 請<strong>保持此頁開啟</strong>，系統會在網路恢復後自動重送；<br/>2. 也可以按「重新送出」；<br/>3. 若重送仍失敗，再按下方綠色按鈕用 WhatsApp 傳送訂單。<br/><span style={{fontSize:13,opacity:.9}}>Order #{ordNo} has NOT reached the shop yet (network problem). Keep this page open — it will resend automatically when you are back online, or tap “Retry”. If it still fails, send it via WhatsApp below.</span>
