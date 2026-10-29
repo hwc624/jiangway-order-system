@@ -1008,7 +1008,8 @@ function App(){
       discLines.length?"─────────────────────":null,
       ...discLines,
       "─────────────────────",
-      disc>0?`小計：R${sub}`:null,
+      (disc>0||addonTotal>0)?`餐點小計：R${sub}`:null,
+      addonTotal>0?`加價購：+R${addonTotal}`:null,
       disc>0?`折扣：-R${disc}`:null,
       `💰 合計 Total：R${total}`,
       note?`📝 ${note}`:null,
@@ -1639,7 +1640,9 @@ function App(){
               <div key={p.id} className="jw-line" style={{gridTemplateColumns:"1fr auto"}}><span style={{color:"var(--jw-amber-main)"}}>＋{p.addonName} × {addonQty[p.id]}</span><b style={{color:"var(--jw-amber-main)"}}>+R{p.addonPrice*addonQty[p.id]}</b></div>
             ))}
             {discLines.map((l,i)=><div key={i} style={{fontSize:13,color:"var(--jw-success-main)",marginTop:6}}>{l}</div>)}
-            {disc>0&&<div style={{display:"flex",justifyContent:"space-between",marginTop:8}}><span style={{color:"var(--jw-text-muted)"}}>小計</span><s style={{color:"var(--jw-text-muted)"}}>R{sub}</s></div>}
+            {(disc>0||addonTotal>0)&&<div id="confirmSub" style={{display:"flex",justifyContent:"space-between",marginTop:8}}><span style={{color:"var(--jw-text-muted)"}}>餐點小計</span><span style={{color:"var(--jw-text-muted)"}}>R{sub}</span></div>}
+            {addonTotal>0&&<div style={{display:"flex",justifyContent:"space-between",marginTop:4}}><span style={{color:"var(--jw-text-muted)"}}>加價購</span><span style={{color:"var(--jw-text-muted)"}}>+R{addonTotal}</span></div>}
+            {disc>0&&<div style={{display:"flex",justifyContent:"space-between",marginTop:4}}><span style={{color:"var(--jw-text-muted)"}}>折扣</span><span style={{color:"var(--jw-success-main)"}}>-R{disc}</span></div>}
             <div className="jw-total"><span style={{fontWeight:800}}>合計 Total</span><b id="confirmTotal">R{total}</b></div>
             {note&&<div style={{fontSize:13,color:"var(--jw-text-muted)",borderTop:"1px dashed var(--jw-line-main)",paddingTop:8}}>備註：{note}</div>}
           </div>

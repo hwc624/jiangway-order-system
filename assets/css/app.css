@@ -1,6 +1,7 @@
 /* 江味齋 · 夜市霓虹 B — 套用到正式程式時補的版面細節（依 SPEC.md；色票只用 tokens.css 的 --jw-*） */
 #root{min-height:100vh}
 .jw a{color:inherit}
+.jw a.jw-btn--wa{color:var(--jw-wa-ink)}
 .jw-tab{display:flex;align-items:center;gap:4px;text-decoration:none;color:inherit;white-space:nowrap}
 .jw-tab.jw-tab--active{color:var(--jw-accent-ink)}
 .jw-section{scroll-margin-top:130px}
