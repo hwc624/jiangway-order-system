@@ -186,35 +186,65 @@ function fbErr(action){
 }
 
 // 解析中文時間字串為時間戳（用於排序）
-// 例如 "2026/5/7 上午10:48:20" → 數字
+// 支援 "2026/5/7 上午10:48:20"、"2026/5/7 晚上 9:05:00"、"2026/5/7 21:05:00"、凌晨/清晨/中午/下午，
+// 以及 U+202F / NBSP 等特殊空白；無法解析一律回傳 0（絕不回傳 NaN）
 function parseTs(ts){
-  if(!ts) return 0;
   try{
-    // 拆解日期跟時間
-    const parts=ts.trim().split(" ");
-    if(parts.length<2) return new Date(ts).getTime()||0;
-    const dateStr=parts[0]; // "2026/5/7"
-    let timeStr=parts[1];   // "上午10:48:20" 或 "下午4:30:54"
-    
-    // 處理上午/下午
-    let isPM=false;
-    if(timeStr.startsWith("下午")){
-      isPM=true;
-      timeStr=timeStr.replace("下午","");
-    } else if(timeStr.startsWith("上午")){
-      timeStr=timeStr.replace("上午","");
+    if(!ts||typeof ts!=="string") return 0;
+    const t=ts.replace(/[\u00A0\u202F\u2007\u2009\u3000]/g," ").replace(/\s+/g," ").trim();
+    const m=t.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})[,，]?\s*(凌晨|清晨|早上|上午|中午|下午|晚上|AM|PM|am|pm)?\s*(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?\s*(AM|PM|am|pm)?/);
+    if(!m){ const v=new Date(t).getTime(); return isFinite(v)?v:0; }
+    const y=+m[1],mo=+m[2],d=+m[3];
+    let h=+m[5]; const mi=+m[6], se=+(m[7]||0);
+    const per=(m[4]||m[8]||"").toUpperCase();
+    if(["下午","晚上","PM"].includes(per)){ if(h<12) h+=12; }
+    else if(per==="中午"){ if(h<11) h+=12; }          // 中午12:30 → 12；中午1:00 → 13
+    else if(["凌晨","清晨","早上","上午","AM"].includes(per)){ if(h===12) h=0; }
+    const v=new Date(y,mo-1,d,h,mi,se).getTime();
+    return isFinite(v)?v:0;
+  }catch(e){ return 0; }
+}
+// 訂單排序（新→舊）：時間相同或無法解析時，用 Firebase push key（依時間排序）當備援，保證排序穩定
+function cmpOrdersDesc(a,b){
+  const d=parseTs(b&&b.ts)-parseTs(a&&a.ts);
+  if(d) return d;
+  const ka=(a&&a._fbKey)||"", kb=(b&&b._fbKey)||"";
+  return ka<kb?1:ka>kb?-1:0;
+}
+
+// ===== 可靠存單：失敗/逾時自動重試，存入前完整保存在客人手機（jw_pending_order），同一個 push key 絕不重複 =====
+const PENDING_KEY="jw_pending_order";
+function loadPending(){ try{ const v=JSON.parse(localStorage.getItem(PENDING_KEY)||"null"); return v&&v.key&&v.order?v:null; }catch(e){ return null; } }
+function savePending(v){ try{ localStorage.setItem(PENDING_KEY,JSON.stringify(v)); }catch(e){} }
+function clearPending(key){ try{ const v=loadPending(); if(!v||!key||v.key===key) localStorage.removeItem(PENDING_KEY); }catch(e){} }
+// 去掉 undefined / NaN 等 Firebase 不接受的值，避免 set() 同步丟錯
+function cleanForDb(o){ return JSON.parse(JSON.stringify(o,(k,v)=>(typeof v==="number"&&!isFinite(v))?undefined:v)); }
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+// 回傳 "ok"（伺服器已確認）/ "dup"（此 key 已存在＝先前已存好）/ "rejected"（規則拒絕）/ "timeout"（仍未確認，資料保留在手機待重試）
+// fresh=true 表示這個 key 是剛產生、從沒送過：此時 PERMISSION_DENIED 代表資料被規則拒絕；否則代表已存在
+const inflight={}; // 同一頁面裡同一個 key 只會有一個 set() 在跑
+async function saveOrderReliably(key,order,{fresh=false,attempts=3,waits=[4000,8000,15000],onStatus}={}){
+  if(!window.fbDb) return "timeout";
+  const ref=window.fbDb.ref(`orders/${key}`);
+  for(let i=0;i<attempts;i++){
+    if(!inflight[key]){
+      let pr;
+      try{ pr=ref.set(cleanForDb(order)); }
+      catch(e){ console.error("❌ set() 同步錯誤:",e.message); pr=Promise.reject(e); }
+      inflight[key]=pr.then(()=>"ok",err=>{
+        const code=String((err&&(err.code||err.message))||"");
+        console.error("❌ 存訂單失敗:",code);
+        return /permission/i.test(code)?((fresh&&i===0)?"rejected":"dup"):"error";
+      }).then(r=>{ delete inflight[key]; return r; });
     }
-    
-    const [y,m,d]=dateStr.split("/").map(Number);
-    const [hh,mm,ss]=timeStr.split(":").map(Number);
-    let hour=hh;
-    if(isPM&&hour<12) hour+=12;
-    if(!isPM&&hour===12) hour=0;
-    
-    return new Date(y,m-1,d,hour,mm||0,ss||0).getTime();
-  }catch(e){
-    return new Date(ts).getTime()||0;
+    const r=await Promise.race([inflight[key],sleep(waits[i]||waits[waits.length-1]).then(()=>"wait")]);
+    if(r==="ok"||r==="dup"){ clearPending(key); return r; }
+    if(r==="rejected"){ return r; }
+    if(onStatus) onStatus("retrying",i+1);
+    if(r==="error") await sleep(1000*(i+1));  // 失敗：退避後重送同一個 key
+    // r==="wait"：前一個 set 仍在佇列中（多半是離線），繼續等它，不重複送
   }
+  return "timeout";
 }
 
 // 舊版本留在客人手機上的 localStorage（訂單編號、訂單、售完）已不再使用，啟動時清掉一次
@@ -573,7 +603,10 @@ function App(){
   const [ordNo,setOrdNo]=useState("");
   const [submittedTxt,setSubmittedTxt]=useState(""); // step 5 用的訂單文字（提交時凍結）
   const [submitting,setSubmitting]=useState(false); // 防止重複提交
-  const [saveStatus,setSaveStatus]=useState(""); // 提交後訂單是否成功存入：ok / failed / timeout
+  const [saveStatus,setSaveStatus]=useState(""); // 提交後訂單是否成功存入：saving / ok / failed / timeout / rejected
+  const [pendingKey,setPendingKey]=useState("");   // 目前這筆訂單的 Firebase key（重試時沿用，避免重複）
+  const [pendingBanner,setPendingBanner]=useState(null); // 開頁時補送上次未送出的訂單：{no,status}
+  const [todayCounter,setTodayCounter]=useState(null);   // 後台：今天 order_counters 的值
   const [pForm,setPForm]=useState({type:"order_discount",label:"",pct:"",itemId:"",addonName:"",addonPrice:""});
   const [distance,setDistance]=useState("");
   const [eftProof,setEftProof]=useState("");
@@ -646,6 +679,44 @@ function App(){
     return ()=>dbRef.off("value",unsubscribe);
   },[]);
 
+  // 開頁時：上次有未被伺服器確認的訂單 → 安靜地補送一次（同一個 key，不會重複）
+  useEffect(()=>{
+    const p=loadPending();
+    if(!p||!window.fbDb) return;
+    if(Date.now()-(p.savedAt||0)>3*24*3600*1000){ clearPending(p.key); return; } // 超過 3 天不再補送
+    setPendingBanner({no:p.order.no,status:"saving"});
+    saveOrderReliably(p.key,p.order,{fresh:false,attempts:4}).then(r=>{
+      setPendingBanner({no:p.order.no,status:(r==="ok"||r==="dup")?"ok":"failed"});
+    });
+  },[]);
+
+  // 連線恢復時，自動再送一次還沒確認的訂單
+  useEffect(()=>{
+    if(!window.fbDb) return;
+    const cRef=window.fbDb.ref(".info/connected");
+    const h=cRef.on("value",snap=>{
+      if(snap.val()!==true) return;
+      const p=loadPending();
+      if(!p) return;
+      saveOrderReliably(p.key,p.order,{fresh:false}).then(r=>{
+        const ok=r==="ok"||r==="dup";
+        setPendingKey(k=>{ if(k===p.key&&ok) setSaveStatus("ok"); return k; });
+        setPendingBanner(b=>b&&b.no===p.order.no?{...b,status:ok?"ok":b.status}:b);
+      });
+    });
+    return ()=>cRef.off("value",h);
+  },[]);
+
+  // 後台：讀今天的訂單編號計數器，用來比對有沒有訂單漏存
+  useEffect(()=>{
+    if(!window.fbDb||!isStaff){ setTodayCounter(null); return; }
+    const d=new Date();
+    const k=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    const r=window.fbDb.ref(`order_counters/${k}`);
+    const h=r.on("value",snap=>setTodayCounter({dateKey:k,n:Number(snap.val())||0}),err=>console.warn("讀取計數器失敗:",err.message));
+    return ()=>r.off("value",h);
+  },[isStaff]);
+
   // Firebase 即時同步訂單（只在店主登入後才訂閱；客人端不會下載任何訂單）
   useEffect(()=>{
     if(!window.fbDb||!isStaff){
@@ -662,7 +733,7 @@ function App(){
       });
       
       // 按時間排序（最新在上）
-      fbOrdersList.sort((a,b)=>parseTs(b.ts)-parseTs(a.ts));
+      fbOrdersList.sort(cmpOrdersDesc);
       
       setOrders(fbOrdersList); // 全部訂單（分析頁要用全部）；列表顯示另外限制筆數
       console.log("📡 從 Firebase orders 更新訂單，共", fbOrdersList.length, "筆");
@@ -886,6 +957,13 @@ function App(){
     const ua=navigator.userAgent||"";
     return /micromessenger|FBAN|FBAV|Instagram|Line\/|LinkedInApp|Twitter/i.test(ua);
   };
+  const retrySave=async ()=>{
+    const p=loadPending();
+    if(!p){ setSaveStatus("ok"); return; } // 已經存好
+    setSaveStatus("saving");
+    const r=await saveOrderReliably(p.key,p.order,{fresh:false});
+    setSaveStatus((r==="ok"||r==="dup")?"ok":"timeout");
+  };
   const sendWA=async ()=>{
     if(submitting)return; // 防止連點造成重複訂單
     if(cartItems.length===0){alert("⚠️ 購物車是空的（品項可能剛售完），請回上一步選餐\nYour cart is empty");return;}
@@ -956,19 +1034,20 @@ function App(){
       ts:new Date().toLocaleString("zh-TW")
     };
     
-    // 存到 Firebase（用 push 確保 key 絕對唯一）
-    let savePromise=Promise.resolve("failed");
-    if(window.fbDb){
-      const newRef=window.fbDb.ref("orders").push();
-      savePromise=newRef.set(newOrder).then(()=>"ok").catch(err=>{
-        console.error("❌ Firebase 存訂單失敗:", err.message);
-        return "failed";
-      });
-    }
-    // 等訂單寫入 Firebase 完成（最多等 3 秒，避免網路慢時卡住）
-    const result=await Promise.race([savePromise,new Promise(r=>setTimeout(()=>r("timeout"),3000))]);
+    // 存到 Firebase：push key 只產生一次，重試都用同一個 key（規則 !data.exists() 保證不會重複）
+    let key="";
+    try{ key=window.fbDb?window.fbDb.ref("orders").push().key:""; }catch(e){}
+    if(!key) key="L"+Date.now().toString(36)+Math.random().toString(36).slice(2,8); // 沒有資料庫時仍保留訂單
+    savePending({key,order:newOrder,txt:frozenTxt,savedAt:Date.now()}); // 伺服器確認前，完整訂單留在手機
+    setPendingKey(key);
+    setSaveStatus("saving");
+    // 先最多等 3 秒；未確認就先顯示警告頁，背景繼續重試
+    const savePromise=saveOrderReliably(key,newOrder,{fresh:true});
+    const first=await Promise.race([savePromise,sleep(3000).then(()=>"timeout")]);
+    const norm=r=>(r==="ok"||r==="dup")?"ok":r==="rejected"?"rejected":"timeout";
+    const result=norm(first);
     setSaveStatus(result);
-    if(result==="timeout") savePromise.then(r=>setSaveStatus(r)); // 之後若存好了，更新提示
+    if(first==="timeout") savePromise.then(r=>setSaveStatus(norm(r))); // 之後若存好了，更新提示
 
     // 跳到 step 5（提交完成頁面）；成功存入才自動開啟 WhatsApp，否則顯示警告讓客人手動傳送
     setSubmitting(false);
@@ -980,7 +1059,7 @@ function App(){
     if(navigator.clipboard){navigator.clipboard.writeText(txt).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2500);});}
     else{const t=document.createElement("textarea");t.value=txt;document.body.appendChild(t);t.select();document.execCommand("copy");document.body.removeChild(t);setCopied(true);setTimeout(()=>setCopied(false),2500);}
   };
-  const reset=()=>{nRef.current="";phRef.current="";adRef.current="";noRef.current="";setStep(1);setNameVal("");setPhoneVal("");setCart({});setAddonQty({});setPickup("外帶");setAddr("");setPay("現金");setSelDate(null);setTime("");setNote("");setCopied(false);setOrdNo("");setDistance("");setEftProof("");setEftProofFile(null);setSubmittedTxt("");setSubmitting(false);setSaveStatus("");};
+  const reset=()=>{nRef.current="";phRef.current="";adRef.current="";noRef.current="";setStep(1);setNameVal("");setPhoneVal("");setCart({});setAddonQty({});setPickup("外帶");setAddr("");setPay("現金");setSelDate(null);setTime("");setNote("");setCopied(false);setOrdNo("");setDistance("");setEftProof("");setEftProofFile(null);setSubmittedTxt("");setSubmitting(false);setSaveStatus("");setPendingKey("");};
   const addPromo=()=>{
     if(!pForm.label){alert("⚠️ 請輸入促銷名稱");return;}
     if(pForm.type!=="addon"&&!pForm.pct){alert("⚠️ 請輸入折扣 %");return;}
@@ -1184,6 +1263,20 @@ function App(){
           }} style={{width:"100%",background:NAVY,color:"#fff",border:"none",borderRadius:8,padding:"12px",fontSize:14,cursor:"pointer",marginTop:14}}>儲存 Save</button>
         </div>}
         {adminTab==="orders"&&<>
+          {todayCounter&&(()=>{
+            const todays=orders.filter(o=>orderDateKey(o)===todayCounter.dateKey);
+            const N=todayCounter.n, M=todays.length;
+            const isFb=no=>/^9[0-9]{3}$/.test(String(no||""));
+            const fallback=todays.filter(o=>isFb(o.no));
+            const present=new Set(todays.filter(o=>!isFb(o.no)).map(o=>parseInt(o.no,10)));
+            const missing=[]; for(let i=1;i<=N;i++) if(!present.has(i)) missing.push(String(i).padStart(4,"0"));
+            const normalCount=M-fallback.length;
+            if(!(N>normalCount&&missing.length)&&!fallback.length) return null;
+            return <div id="orderGapWarn" style={{background:"#FFE8E8",border:`2px solid ${RED}`,borderRadius:10,padding:"10px 12px",marginBottom:12,fontSize:13,color:RED,lineHeight:1.6}}>
+              {N>normalCount&&missing.length>0&&<div>⚠️ 今天已發出 {N} 個編號，但後台只收到 {normalCount} 筆，可能有訂單未存入，請對照 WhatsApp。<br/>缺少的編號：{missing.map(x=>"#"+x).join("、")}（也可能是已被刪除）</div>}
+              {fallback.length>0&&<div>⚠️ 今天有 {fallback.length} 筆備援編號訂單（{fallback.map(o=>"#"+o.no).join("、")}），請核對 WhatsApp。</div>}
+            </div>;
+          })()}
           {orders.length===0&&<div style={{textAlign:"center",color:"#aaa",padding:"40px 0"}}>尚無訂單記錄</div>}
           {(()=>{
             const getDateKey=orderDateKey;
@@ -1194,7 +1287,7 @@ function App(){
               return `${nums[0]}/${String(nums[1]).padStart(2,"0")}/${String(nums[2]).padStart(2,"0")}`;
             };
             // 按日期分組訂單
-            const sorted=[...orders].sort((a,b)=>parseTs(b.ts)-parseTs(a.ts)).slice(0,ORDER_DISPLAY_LIMIT);
+            const sorted=[...orders].sort(cmpOrdersDesc).slice(0,ORDER_DISPLAY_LIMIT);
             const groups={};
             sorted.forEach(o=>{
               const dk=getDateKey(o);
@@ -1218,7 +1311,7 @@ function App(){
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                       <div style={{flex:1}}>
                         <div style={{display:"flex",justifyContent:"space-between"}}>
-                          <span style={{fontSize:13,fontWeight:500,color:NAVY}}>#{o.no} · {o.name}</span>
+                          <span style={{fontSize:13,fontWeight:500,color:NAVY}}>#{o.no} · {o.name}</span>{/^9[0-9]{3}$/.test(String(o.no||""))&&<span className="fbNoTag" style={{marginLeft:6,fontSize:10,background:"#FFE8E8",color:RED,border:`1px solid ${RED}`,borderRadius:6,padding:"1px 5px"}}>備援編號，請核對</span>}
                           <span style={{color:RED,fontWeight:500}}>R{o.total}</span>
                         </div>
                         {suspicious&&<div className="price-alert" style={{fontSize:12,color:RED,fontWeight:500,marginTop:4,background:"#FFF0F0",borderRadius:6,padding:"6px 8px"}}>
@@ -1456,21 +1549,30 @@ function App(){
           <button onClick={copy} style={{width:"100%",padding:"12px",borderRadius:10,border:`2px solid ${copied?"#27AE60":RED}`,background:copied?"#27AE60":"#fff",color:copied?"#fff":RED,fontSize:13,fontWeight:500,cursor:"pointer",marginBottom:10}}>{copied?"✓ 已複製！Copied!":"複製訂單文字 Copy Text"}</button>
           <button onClick={reset} style={{width:"100%",padding:"12px",borderRadius:10,border:`1.5px solid ${BORDER}`,background:"#fff",color:"#888",fontSize:13,cursor:"pointer"}}>+ 新增訂單 New Order</button>
         </div>}
+        {pendingBanner&&step!==5&&<div id="pendingBanner" style={{background:pendingBanner.status==="ok"?"#E8F8EE":"#FFF4E0",border:`1.5px solid ${pendingBanner.status==="ok"?"#27AE60":"#E67E22"}`,borderRadius:10,padding:"8px 12px",marginBottom:12,fontSize:12,color:pendingBanner.status==="ok"?"#1E8449":"#A04000",lineHeight:1.5}}>
+          {pendingBanner.status==="ok"?<>✅ 上次的訂單 #{pendingBanner.no} 已補送到店家 · Your previous order #{pendingBanner.no} has now reached the shop.</>
+           :pendingBanner.status==="saving"?<>⏳ 正在補送上次未送出的訂單 #{pendingBanner.no}… · Resending your previous order #{pendingBanner.no}…</>
+           :<>⚠️ 上次的訂單 #{pendingBanner.no} 仍未送達店家，網路恢復後會再試；如急用請用 WhatsApp 聯絡店家。 · Previous order #{pendingBanner.no} has not reached the shop yet; please contact us on WhatsApp if urgent.</>}
+          <span onClick={()=>setPendingBanner(null)} style={{float:"right",cursor:"pointer"}}>✕</span>
+        </div>}
         {step===5&&<div>
           <div style={{textAlign:"center",marginBottom:24}}>
             <div style={{fontSize:48,marginBottom:8}}>{saveStatus==="ok"?"✅":"⚠️"}</div>
-            <div className="serif" style={{fontSize:22,fontWeight:700,color:saveStatus==="ok"?"#27AE60":"#E67E22",marginBottom:6}}>{saveStatus==="ok"?"訂單已提交！":"請用 WhatsApp 傳送訂單"}</div>
-            <div style={{fontSize:14,color:saveStatus==="ok"?"#27AE60":"#E67E22",marginBottom:14}}>{saveStatus==="ok"?"Order Submitted!":"Please send your order via WhatsApp"}</div>
+            <div className="serif" style={{fontSize:22,fontWeight:700,color:saveStatus==="ok"?"#27AE60":"#E67E22",marginBottom:6}}>{saveStatus==="ok"?"訂單已提交！":saveStatus==="saving"?"訂單送出中…":"訂單尚未送達店家"}</div>
+            <div style={{fontSize:14,color:saveStatus==="ok"?"#27AE60":"#E67E22",marginBottom:14}}>{saveStatus==="ok"?"Order Submitted!":saveStatus==="saving"?"Sending your order…":"Your order has NOT reached the shop yet"}</div>
             <div style={{background:RED,color:"#fff",borderRadius:8,padding:"8px 16px",fontSize:15,fontWeight:500,display:"inline-block"}}>訂單編號 #{ordNo}</div>
           </div>
           
           {saveStatus!=="ok"&&<div id="saveWarn" style={{background:"#FFE8E8",border:`2px solid ${RED}`,borderRadius:14,padding:"14px 16px",marginBottom:16,fontSize:13,color:RED,lineHeight:1.6}}>
-            {saveStatus==="timeout"
-              ?<>⚠️ 網路較慢，訂單<strong>可能尚未存入</strong>店家系統。請務必按下方綠色按鈕用 WhatsApp 傳送訂單，店家才會收到。<br/><span style={{fontSize:12}}>Your order may not have been saved yet (slow network). Please tap the green button to send it via WhatsApp.</span></>
-              :<>⚠️ 訂單<strong>未能存入</strong>店家系統（可能是網路問題）。請務必按下方綠色按鈕用 WhatsApp 傳送訂單，並截圖此畫面。<br/><span style={{fontSize:12}}>Your order could not be saved. Please tap the green button to send it via WhatsApp and take a screenshot.</span></>}
+            {saveStatus==="saving"
+              ?<>⏳ 正在把訂單 #{ordNo} 送到店家，請稍候，<strong>不要關閉此頁</strong>。<br/><span style={{fontSize:12}}>Sending order #{ordNo} to the shop… please keep this page open.</span></>
+              :saveStatus==="rejected"
+              ?<>⚠️ 訂單 #{ordNo} <strong>尚未送達店家</strong>（系統無法接受此訂單）。請按下方綠色按鈕用 WhatsApp 傳送訂單，並截圖此畫面。<br/><span style={{fontSize:12}}>Order #{ordNo} has NOT reached the shop (the system could not accept it). Please send it via WhatsApp below and take a screenshot.</span></>
+              :<>⚠️ 訂單 #{ordNo} <strong>尚未送達店家</strong>（網路不穩）。<br/>1. 請<strong>保持此頁開啟</strong>，系統會在網路恢復後自動重送；<br/>2. 也可以按「重新送出」；<br/>3. 若重送仍失敗，再按下方綠色按鈕用 WhatsApp 傳送訂單。<br/><span style={{fontSize:12}}>Order #{ordNo} has NOT reached the shop yet (network problem). Keep this page open — it will resend automatically when you are back online, or tap “Retry”. If it still fails, send it via WhatsApp below.</span>
+                <button id="retrySave" onClick={retrySave} style={{display:"block",width:"100%",marginTop:10,padding:"12px",borderRadius:10,border:"none",background:RED,color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>🔄 重新送出 Retry</button></>}
           </div>}
           <div style={{background:"#FFF9E6",border:`2px solid #F39C12`,borderRadius:14,padding:"16px",marginBottom:16}}>
-            <div style={{fontSize:14,fontWeight:700,color:"#7A5800",marginBottom:8}}>{saveStatus==="ok"?"📱 正在開啟 WhatsApp… Opening WhatsApp…":"📱 請按下方按鈕開啟 WhatsApp"}</div>
+            <div style={{fontSize:14,fontWeight:700,color:"#7A5800",marginBottom:8}}>{saveStatus==="ok"?"📱 正在開啟 WhatsApp… Opening WhatsApp…":"📱 重新送出仍失敗時，再按下方按鈕用 WhatsApp 傳送 · If retry fails, send via WhatsApp below"}</div>
             <div style={{fontSize:12,color:"#7A5800",lineHeight:1.6,marginBottom:10}}>請在 WhatsApp 裡按<strong>「傳送」</strong>把訂單送給店家，我們收到後才會開始準備您的餐點。</div>
             <div style={{fontSize:12,color:"#7A5800",lineHeight:1.6}}>Please tap <strong>Send</strong> in WhatsApp to deliver your order to us. We will start preparing once we receive it.</div>
           </div>
