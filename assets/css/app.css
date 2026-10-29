@@ -2,6 +2,7 @@
 #root{min-height:100vh}
 .jw a{color:inherit}
 .jw-tab{display:flex;align-items:center;gap:4px;text-decoration:none;color:inherit;white-space:nowrap}
+.jw-tab.jw-tab--active{color:var(--jw-accent-ink)}
 .jw-section{scroll-margin-top:130px}
 .jw-section__title{overflow-wrap:anywhere}
 .jw-cartbar-spacer{height:88px}

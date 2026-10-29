@@ -199,8 +199,25 @@ function getPending(key){ return loadQueue()[key]||null; }
 function savePending(v){ const q=loadQueue(); q[v.key]={sent:false,status:"pending",...q[v.key],...v}; writeQueue(q); }
 function updatePending(key,patch){ const q=loadQueue(); if(q[key]){ q[key]={...q[key],...patch}; writeQueue(q); } }
 function clearPending(key){ if(!key) return; const q=loadQueue(); if(q[key]){ delete q[key]; writeQueue(q); } }
+// 跨分頁：記下「伺服器已確認」的 key（保留 3 天），別的分頁之後拿到 PERMISSION_DENIED 時可判成已存好，不會誤顯示「可能已送達」
+const CONFIRMED_KEY="jw_confirmed_orders";
+function loadConfirmed(){ try{ const v=JSON.parse(localStorage.getItem(CONFIRMED_KEY)||"{}"); return (v&&typeof v==="object"&&!Array.isArray(v))?v:{}; }catch(e){ return {}; } }
+function markConfirmed(key){ try{ const c=loadConfirmed(), now=Date.now(); c[key]=now; for(const k of Object.keys(c)) if(!(now-c[k]<PENDING_MAX_AGE)) delete c[k]; localStorage.setItem(CONFIRMED_KEY,JSON.stringify(c)); }catch(e){} }
+function isConfirmed(key){ return !!loadConfirmed()[key]; }
+// 同時只讓一個分頁補送：優先 navigator.locks；不支援時用 localStorage 租約（每 5 秒續約，15 秒沒續約視為失效）
+const TAB_ID=Math.random().toString(36).slice(2);
+async function withFlushLock(fn){
+  if(navigator.locks&&navigator.locks.request) return navigator.locks.request("jw_flush_queue",fn);
+  const LK="jw_flush_lease", read=()=>{ try{ return JSON.parse(localStorage.getItem(LK)||"null"); }catch(e){ return null; } };
+  for(;;){ const l=read(); if(!l||l.owner===TAB_ID||l.until<Date.now()) break; await sleep(500); }
+  const put=()=>{ try{ localStorage.setItem(LK,JSON.stringify({owner:TAB_ID,until:Date.now()+15000})); }catch(e){} };
+  put(); const t=setInterval(put,5000);
+  try{ return await fn(); } finally{ clearInterval(t); const l=read(); if(l&&l.owner===TAB_ID) localStorage.removeItem(LK); }
+}
 // 去掉 undefined / NaN 等 Firebase 不接受的值，避免 set() 同步丟錯
 function cleanForDb(o){ return JSON.parse(JSON.stringify(o,(k,v)=>(typeof v==="number"&&!isFinite(v))?undefined:v)); }
+// 備援編號＝"9"+3 位數（4 碼）。正常編號也可能到 9000 以上，所以已知當天已發號數 n 時，只有大於 n 的 9xxx 才算備援
+function isFbNo(no,n){ const s=String(no||""); if(!/^9[0-9]{3}$/.test(s)) return false; return !(Number.isFinite(n)&&parseInt(s,10)<=n); }
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 // 回傳 "ok"（伺服器已確認）/ "rejected"（從沒送出過就被規則拒絕＝確定沒存）/ "unsure"（曾送出過、這次被拒：可能先前已存好，也可能資料被拒，客人無讀取權限無法分辨）/ "timeout"（仍未確認，留在手機待重試）
 // 只有 "ok" 會把訂單從手機佇列移除；"rejected"/"unsure" 會保留，直到客人自己關掉提示
@@ -228,7 +245,8 @@ async function saveOrderReliably(key,order,{attempts=3,waits=[4000,8000,15000],o
       }).then(r=>{ delete inflight[key]; return r; });
     }
     const r=await Promise.race([inflight[key],sleep(waits[i]||waits[waits.length-1]).then(()=>"wait")]);
-    if(r==="ok"){ clearPending(key); return r; }
+    if(r==="ok"){ markConfirmed(key); clearPending(key); return r; }
+    if((r==="rejected"||r==="unsure")&&isConfirmed(key)){ clearPending(key); return "ok"; } // 別的分頁已確認存好
     if(r==="rejected"||r==="unsure"){ updatePending(key,{status:r}); return r; }
     if(onStatus) onStatus("retrying",i+1);
     if(r==="error") await sleep(1000*(i+1));  // 失敗：退避後重送同一個 key
@@ -240,16 +258,18 @@ async function saveOrderReliably(key,order,{attempts=3,waits=[4000,8000,15000],o
 let flushing=null;
 function flushQueue(onEach,opts){
   if(flushing) return flushing;
-  flushing=(async()=>{
+  flushing=withFlushLock(async()=>{
     const q=loadQueue();
-    for(const e of Object.values(q).sort((a,b)=>(a.savedAt||0)-(b.savedAt||0))){
+    for(const e0 of Object.values(q).sort((a,b)=>(a.savedAt||0)-(b.savedAt||0))){
+      const e=getPending(e0.key); // 等鎖期間別的分頁可能已處理
+      if(!e){ onEach&&onEach(e0,isConfirmed(e0.key)?"ok":"gone"); continue; }
       if(Date.now()-(e.savedAt||0)>PENDING_MAX_AGE){ clearPending(e.key); continue; } // 超過 3 天不再補送
       if(e.status!=="pending"){ onEach&&onEach(e,e.status); continue; }
       onEach&&onEach(e,"saving");
       const r=await saveOrderReliably(e.key,e.order,opts);
       onEach&&onEach(e,r);
     }
-  })().finally(()=>{flushing=null;});
+  }).finally(()=>{flushing=null;});
   return flushing;
 }
 
@@ -613,6 +633,7 @@ function App(){
   const [note,setNote]=useState("");
   const [copied,setCopied]=useState(false);
   const [ordNo,setOrdNo]=useState("");
+  const [fbNo,setFbNo]=useState(false); // 這次用的是備援編號（取號失敗）
   const [submittedTxt,setSubmittedTxt]=useState(""); // step 5 用的訂單文字（提交時凍結）
   const [submitting,setSubmitting]=useState(false); // 防止重複提交
   const [submitErr,setSubmitErr]=useState(""); // 確認頁送出前的再檢查訊息
@@ -698,6 +719,7 @@ function App(){
 
   // 開頁時、連線恢復時：逐筆補送手機佇列裡未被伺服器確認的訂單（每筆各自的 key，不會重複）
   const onQueueResult=(e,r)=>{
+    if(r==="gone"){ setPendingList(l=>l.filter(x=>x.key!==e.key)); return; } // 已被客人關掉，不再顯示
     const st=r==="ok"?"ok":r==="saving"?"saving":r==="rejected"?"rejected":r==="unsure"?"unsure":"failed";
     if(e.key===curKeyRef.current){ // 目前完成頁上的這一筆
       if(r==="ok"||r==="rejected"||r==="unsure") setSaveStatus(r);
@@ -962,11 +984,13 @@ function App(){
   };
   const pickLbl=()=>pickup==="外帶"?"外帶 Takeaway":pickup==="外送"?"外送平台取貨 Courier pickup":"內用 Dine-in";
   const payLbl=()=>pay==="現金"?"現金 Cash":pay==="餐券"?"餐券 Voucher":"EFT";
-  const orderTxt=(no)=>{
+  const FB_NOTE="⚠️ 備援編號，請以店家回覆為準 · Backup number – please rely on the shop's reply";
+  const orderTxt=(no,isFb)=>{
     const em=pickup==="外送"?"🛵":pickup==="內用"?"🪑":"🥡";
     const aLines=addonList.filter(p=>(addonQty[p.id]||0)>0).map(p=>`  ＋${p.addonName} × ${addonQty[p.id]}　R${p.addonPrice*addonQty[p.id]}`);
     return[
       `🏮 江味齋 JiangWay 訂單${no?" #"+no:""}`,
+      isFb?FB_NOTE:null,
       `📅 ${new Date().toLocaleDateString("zh-TW",{year:"numeric",month:"long",day:"numeric",weekday:"short"})}`,
       "─────────────────────",
       `👤 ${nameVal}${phoneVal?` · ${phoneVal}`:""}`,
@@ -1045,7 +1069,8 @@ function App(){
     setOrdNo(realOrdNo);
     
     // 凍結訂單文字給 step 5 使用（避免 reset 後文字消失）
-    const frozenTxt=orderTxt(realOrdNo);
+    setFbNo(!usedTransaction);
+    const frozenTxt=orderTxt(realOrdNo,!usedTransaction);
     setSubmittedTxt(frozenTxt);
     const waUrl=`https://wa.me/${WA}?text=${encodeURIComponent(frozenTxt)}`;
     
@@ -1090,11 +1115,11 @@ function App(){
     if(result==="ok") setTimeout(()=>{window.location.href=waUrl;},400);
   };
   const copy=()=>{
-    const txt=orderTxt(ordNo);
+    const txt=orderTxt(ordNo,fbNo);
     if(navigator.clipboard){navigator.clipboard.writeText(txt).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2500);});}
     else{const t=document.createElement("textarea");t.value=txt;document.body.appendChild(t);t.select();document.execCommand("copy");document.body.removeChild(t);setCopied(true);setTimeout(()=>setCopied(false),2500);}
   };
-  const reset=()=>{setErrs({});nRef.current="";phRef.current="";adRef.current="";noRef.current="";setStep(1);setNameVal("");setPhoneVal("");setCart({});setAddonQty({});setPickup("外帶");setAddr("");setPay("現金");setSelDate(null);setTime("");setNote("");setCopied(false);setOrdNo("");setDistance("");setEftProof("");setEftProofFile(null);setSubmittedTxt("");setSubmitting(false);setSaveStatus("");setPendingKey("");curKeyRef.current="";setSubmitErr("");};
+  const reset=()=>{setErrs({});nRef.current="";phRef.current="";adRef.current="";noRef.current="";setStep(1);setNameVal("");setPhoneVal("");setCart({});setAddonQty({});setPickup("外帶");setAddr("");setPay("現金");setSelDate(null);setTime("");setNote("");setCopied(false);setOrdNo("");setFbNo(false);setDistance("");setEftProof("");setEftProofFile(null);setSubmittedTxt("");setSubmitting(false);setSaveStatus("");setPendingKey("");curKeyRef.current="";setSubmitErr("");};
   const addPromo=()=>{
     if(!pForm.label){alert("⚠️ 請輸入促銷名稱");return;}
     if(pForm.type!=="addon"&&!pForm.pct){alert("⚠️ 請輸入折扣 %");return;}
@@ -1186,13 +1211,13 @@ function App(){
             <div key={cat.cat} style={{marginBottom:18}}>
               <div style={{fontSize:12,fontWeight:500,color:NAVY,marginBottom:8,borderBottom:`1px solid ${BORDER}`,paddingBottom:4}}>{cat.cat}</div>
               {cat.items.map(item=>{const out=soldOut[item.id];return(
-                <div key={item.id} onClick={()=>{
+                <button type="button" key={item.id} className="stockItem" aria-pressed={!!out} aria-label={`${item.name} ${out?"售完":"有貨"}，按一下切換`} onClick={()=>{
                   // 只改這一項（避免兩台裝置同時操作互相覆蓋）
                   if(window.fbDb) window.fbDb.ref(`soldOut/${item.id}`).set(!soldOut[item.id]).catch(fbErr("更新售完狀態"));
-                }} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"11px 14px",marginBottom:6,borderRadius:10,cursor:"pointer",background:out?"var(--jw-accent-soft)":"var(--jw-bg-card)",border:`1.5px solid ${out?RED:BORDER}`}}>
-                  <div><div style={{fontSize:14,color:out?"var(--jw-text-muted)":DARK,textDecoration:out?"line-through":"none"}}>{item.name}</div><div style={{fontSize:11,color:"var(--jw-text-muted)"}}>{item.nameEn} · R{item.price}</div></div>
-                  <div style={{padding:"4px 12px",borderRadius:20,fontSize:12,fontWeight:500,background:out?RED:"var(--jw-success-soft)",color:out?"var(--jw-accent-ink)":"var(--jw-success-main)"}}>{out?"售完":"有貨"}</div>
-                </div>
+                }} style={{display:"flex",width:"100%",textAlign:"left",font:"inherit",color:"inherit",alignItems:"center",justifyContent:"space-between",padding:"11px 14px",marginBottom:6,borderRadius:10,cursor:"pointer",background:out?"var(--jw-accent-soft)":"var(--jw-bg-card)",border:`1.5px solid ${out?RED:BORDER}`}}>
+                  <span><span style={{display:"block",fontSize:14,color:out?"var(--jw-text-muted)":DARK,textDecoration:out?"line-through":"none"}}>{item.name}</span><span style={{display:"block",fontSize:11,color:"var(--jw-text-muted)"}}>{item.nameEn} · R{item.price}</span></span>
+                  <span style={{flexShrink:0,padding:"4px 12px",borderRadius:20,fontSize:12,fontWeight:500,background:out?RED:"var(--jw-success-soft)",color:out?"var(--jw-accent-ink)":"var(--jw-success-main)"}}>{out?"售完":"有貨"}</span>
+                </button>
               );})}
             </div>
           ))}
@@ -1300,8 +1325,8 @@ function App(){
           </div>}
         </div>}
         {adminTab==="settings"&&<div style={{background:"var(--jw-bg-card)",border:`1.5px solid ${BORDER}`,borderRadius:12,padding:"16px"}}>
-          <Lbl t="最低消費 (R) — 0=不設限"/><input id="setMinOrder" type="number" min="0" key={"min"+minOrder} defaultValue={minOrder} onChange={e=>{minRef.current=e.target.value;setSetErrMsg("");}} style={{...IS,fontSize:14}}/>
-          {/* 外送費欄位已隱藏（店家不再自行外送）；儲存時沿用資料庫既有的 delivFee，不覆蓋 */}{false&&<><Lbl t="外送費 (R) — 0=免費"/><input type="number" key={"fee"+delivFee} defaultValue={delivFee} onChange={e=>{feeRef.current=e.target.value;setSetErrMsg("");}} style={{...IS,fontSize:14}}/></>}
+          <Lbl t="最低消費 (R) — 0=不設限"/><input id="setMinOrder" aria-label="最低消費 (R) Minimum order" type="number" min="0" key={"min"+minOrder} defaultValue={minOrder} onChange={e=>{minRef.current=e.target.value;setSetErrMsg("");}} style={{...IS,fontSize:14}}/>
+          {/* 外送費欄位已隱藏（店家不再自行外送）；儲存時沿用資料庫既有的 delivFee，不覆蓋 */}{false&&<><Lbl t="外送費 (R) — 0=免費"/><input id="setDelivFee" aria-label="外送費 (R) Delivery fee" type="number" key={"fee"+delivFee} defaultValue={delivFee} onChange={e=>{feeRef.current=e.target.value;setSetErrMsg("");}} style={{...IS,fontSize:14}}/></>}
           <button onClick={()=>{
             const bad=v=>v!==null&&(String(v).trim()===""||!isFinite(Number(v))||Number(v)<0);
             if(bad(minRef.current)){setSetErrMsg("⚠️ 最低消費請填 0 或正數（0＝不設限），尚未儲存");return;}
@@ -1318,10 +1343,10 @@ function App(){
           {todayCounter&&(()=>{
             const todays=orders.filter(o=>orderDateKey(o)===todayCounter.dateKey);
             const N=todayCounter.n, M=todays.length;
-            const isFb=no=>/^9[0-9]{3}$/.test(String(no||""));
+            const isFb=no=>isFbNo(no,N);
             const fallback=todays.filter(o=>isFb(o.no));
             const present=new Set(todays.filter(o=>!isFb(o.no)).map(o=>parseInt(o.no,10)));
-            const missing=[]; let missingN=0; for(let i=1;i<=Math.min(N,10000);i++) if(!present.has(i)){ missingN++; if(missing.length<50) missing.push(String(i).padStart(4,"0")); }
+            const missing=[]; let missingN=0; for(let i=1;i<=Math.min(N,1000000);i++) if(!present.has(i)){ missingN++; if(missing.length<50) missing.push(String(i).padStart(4,"0")); }
             const normalCount=M-fallback.length;
             if(!(N>normalCount&&missing.length)&&!fallback.length) return null;
             return <div id="orderGapWarn" role="alert" style={{background:"var(--jw-error-soft)",border:"2px solid var(--jw-error-main)",borderRadius:10,padding:"10px 12px",marginBottom:12,fontSize:14,color:"var(--jw-error-main)",lineHeight:1.6,fontWeight:600}}>
@@ -1363,7 +1388,7 @@ function App(){
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                       <div style={{flex:1}}>
                         <div style={{display:"flex",justifyContent:"space-between"}}>
-                          <span style={{fontSize:13,fontWeight:500,color:NAVY}}>#{o.no} · {o.name}</span>{/^9[0-9]{3}$/.test(String(o.no||""))&&<span className="fbNoTag" style={{marginLeft:6,fontSize:10,background:"var(--jw-error-soft)",color:"var(--jw-error-main)",border:"1px solid var(--jw-error-main)",borderRadius:6,padding:"1px 5px",fontWeight:600}}>備援編號，請核對</span>}
+                          <span style={{fontSize:13,fontWeight:500,color:NAVY}}>#{o.no} · {o.name}</span>{isFbNo(o.no,todayCounter&&orderDateKey(o)===todayCounter.dateKey?todayCounter.n:null)&&<span className="fbNoTag" style={{marginLeft:6,fontSize:10,background:"var(--jw-error-soft)",color:"var(--jw-error-main)",border:"1px solid var(--jw-error-main)",borderRadius:6,padding:"1px 5px",fontWeight:600}}>備援編號，請核對</span>}
                           <span style={{color:RED,fontWeight:500}}>R{o.total}</span>
                         </div>
                         {suspicious&&<div className="price-alert" style={{fontSize:12,color:RED,fontWeight:500,marginTop:4,background:"var(--jw-accent-soft)",borderRadius:6,padding:"6px 8px"}}>
@@ -1376,7 +1401,9 @@ function App(){
                         {o.phone&&<div style={{fontSize:12,color:"var(--jw-text-muted)"}}>📞 <a href={`tel:${o.phone}`} style={{color:"var(--jw-text-muted)"}}>{o.phone}</a></div>}
                         {o.pickup==="外送"&&(o.addr||o.distance)&&<div style={{fontSize:12,color:"var(--jw-text-muted)"}}>📍 {o.addr||""}{o.distance?`（${o.distance} km）`:""}</div>}
                         {o.pay==="EFT"&&o.eftProof&&<div style={{fontSize:12,color:"var(--jw-text-muted)",wordBreak:"break-all"}}>📸 付款證明：{o.eftProof}</div>}
-                        {(o.items||[]).map((i,idx)=><div key={idx} style={{fontSize:12,color:"var(--jw-text-muted)"}}>{i.name} × {i.qty}</div>)}
+                        {(o.items||[]).map((i,idx)=><div key={idx} style={{fontSize:12,color:"var(--jw-text-muted)",overflowWrap:"anywhere"}}>{i.name} × {i.qty}</div>)}
+                        {(o.addons||[]).filter(a=>a&&(a.qty||0)>0).map((a,idx)=><div key={"a"+idx} className="ord-addon" style={{fontSize:12,color:"var(--jw-amber-main)",fontWeight:600,overflowWrap:"anywhere"}}>＋ 加價購 {a.addonName} × {a.qty}{Number.isFinite(Number(a.addonPrice))?`（R${Number(a.addonPrice)*(a.qty||0)}）`:""}</div>)}
+                        {Number(o.disc)>0&&<div className="ord-disc" style={{fontSize:12,color:"var(--jw-success-main)",fontWeight:600}}>🏷 折扣 −R{Number(o.disc)} · 合計 R{o.total}</div>}
                         {o.note&&<div style={{fontSize:11,color:"var(--jw-text-muted)",marginTop:4}}>備註：{o.note}</div>}
                       </div>
                       <button 
@@ -1629,9 +1656,10 @@ function App(){
         {step===5&&<main className="jw-page">
           <section className={"jw-status "+(saveStatus==="ok"?"jw-status--success":"jw-status--warning")} role="status">
             <div className="jw-status__ico"><Ico n={saveStatus==="ok"?"check":"tri"} s={44}/></div>
-            <h1 className="jw-status__title">{saveStatus==="ok"?"訂單已提交！":saveStatus==="saving"?"訂單送出中…":saveStatus==="unsure"?"訂單可能已送達，請確認":"訂單尚未送達店家"}</h1>
-            <p className="jw-status__text">{saveStatus==="ok"?"Order Submitted!":saveStatus==="saving"?"Sending your order…":saveStatus==="unsure"?"Your order may have reached the shop — please confirm":"Your order has NOT reached the shop yet"}</p>
+            <h1 className="jw-status__title">{saveStatus==="ok"?(fbNo?"訂單已提交（備援編號）":"訂單已提交！"):saveStatus==="saving"?"訂單送出中…":saveStatus==="unsure"?"訂單可能已送達，請確認":"訂單尚未送達店家"}</h1>
+            <p className="jw-status__text">{saveStatus==="ok"?(fbNo?"Order submitted (backup number)":"Order Submitted!"):saveStatus==="saving"?"Sending your order…":saveStatus==="unsure"?"Your order may have reached the shop — please confirm":"Your order has NOT reached the shop yet"}</p>
             <p style={{marginTop:14}}><span style={{color:"var(--jw-text-muted)",marginRight:8}}>訂單編號</span><span className="jw-ordno">#{ordNo}</span></p>
+            {fbNo&&<p id="fbNoNotice" style={{marginTop:10,padding:"8px 12px",borderRadius:10,border:"2px solid var(--jw-amber-main)",background:"var(--jw-amber-soft)",color:"var(--jw-amber-main)",fontWeight:700,fontSize:14,lineHeight:1.5}}>⚠️ 備援編號，請以店家回覆為準<br/><span style={{fontSize:13,fontWeight:500}}>Backup order number – please rely on the shop's reply</span></p>}
           </section>
           {saveStatus!=="ok"&&<div id="saveWarn" role="alert" style={{background:saveStatus==="saving"?"var(--jw-amber-soft)":"var(--jw-error-soft)",border:`2px solid ${saveStatus==="saving"?"var(--jw-amber-main)":"var(--jw-error-main)"}`,borderRadius:14,padding:"14px 16px",marginBottom:16,fontSize:15,color:saveStatus==="saving"?"var(--jw-amber-main)":"var(--jw-error-main)",lineHeight:1.6}}>
             {saveStatus==="saving"
@@ -1649,14 +1677,14 @@ function App(){
             <div style={{fontSize:13,color:"var(--jw-text-muted)",lineHeight:1.6}}>Please tap <strong>Send</strong> in WhatsApp to deliver your order to us. We will start preparing once we receive it.</div>
           </div>
           {/* 如果沒有自動跳轉，可以手動按這個按鈕 */}
-          <a id="waLink" href={`https://wa.me/${WA}?text=${encodeURIComponent(submittedTxt||orderTxt(ordNo))}`} className="jw-btn jw-btn--wa" style={{flexDirection:"column",textDecoration:"none",minHeight:64,gap:2}}>
+          <a id="waLink" href={`https://wa.me/${WA}?text=${encodeURIComponent(submittedTxt||orderTxt(ordNo,fbNo))}`} className="jw-btn jw-btn--wa" style={{flexDirection:"column",textDecoration:"none",minHeight:64,gap:2}}>
             <span style={{display:"flex",gap:8,alignItems:"center"}}><Ico n="msg"/>沒有跳轉？點此打開 WhatsApp</span>
             <span style={{fontSize:12,fontWeight:500}}>Not redirected? Tap to open WhatsApp</span>
           </a>
           {/* 備案：複製訂單文字 */}
           <button
             onClick={()=>{
-              const txt=submittedTxt||orderTxt(ordNo);
+              const txt=submittedTxt||orderTxt(ordNo,fbNo);
               if(navigator.clipboard){
                 navigator.clipboard.writeText(txt).then(()=>{
                   setCopied(true);
