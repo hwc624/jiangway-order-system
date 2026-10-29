@@ -254,11 +254,15 @@ async function saveOrderReliably(key,order,{attempts=3,waits=[4000,8000,15000],o
   }
   return "timeout";
 }
+function waitConnected(ms){ return new Promise(res=>{ if(!window.fbDb) return res(false); const ref=window.fbDb.ref(".info/connected"); let done=false;
+  const fin=v=>{ if(done) return; done=true; ref.off("value",h); clearTimeout(t); setTimeout(()=>res(v),300); };
+  const h=ref.on("value",s=>{ if(s.val()===true) fin(true); }); const t=setTimeout(()=>fin(false),ms); }); }
 // 逐筆補送佇列裡還在等待的訂單（同時只跑一輪；每筆用自己的 key）
 let flushing=null;
 function flushQueue(onEach,opts){
   if(flushing) return flushing;
   flushing=withFlushLock(async()=>{
+    await waitConnected(8000); // 連線穩定後才補送：連線建立中送出的 set() 可能被 SDK 重送而得到 PERMISSION_DENIED，誤判成「可能已送達」
     const q=loadQueue();
     for(const e0 of Object.values(q).sort((a,b)=>(a.savedAt||0)-(b.savedAt||0))){
       const e=getPending(e0.key); // 等鎖期間別的分頁可能已處理
