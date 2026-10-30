@@ -610,6 +610,11 @@ function AnalyticsTab({orders,BORDER,RED,NAVY,DARK}){
   );
 }
 
+// 點餐草稿：手機重新整理／切到別的 App 再回來時，記得姓名、電話、已選餐點和目前步驟（6 小時後過期；送出訂單後清掉）
+const DRAFT_KEY="jw_draft", DRAFT_TTL=6*3600*1000;
+function loadDraft(){ try{ const d=JSON.parse(localStorage.getItem(DRAFT_KEY)||"null"); if(!d||typeof d!=="object"||!(Date.now()-d.savedAt<DRAFT_TTL)){ localStorage.removeItem(DRAFT_KEY); return null; } return d; }catch(e){ return null; } }
+function writeDraft(d){ try{ localStorage.setItem(DRAFT_KEY,JSON.stringify({...d,savedAt:Date.now()})); }catch(e){} }
+function clearDraft(){ try{ localStorage.removeItem(DRAFT_KEY); }catch(e){} }
 // 新品輪播 banner：只顯示「新品且未售完」的品項；只剩 1 張不輪播、0 張整個消失（版面恢復無 banner）
 function NewBanner({list}){
   const rm=useRef(typeof matchMedia==="function"&&matchMedia("(prefers-reduced-motion: reduce)").matches).current;
@@ -653,17 +658,18 @@ function App(){
   const [minOrder,setMinOrder]=useState(0);
   const [delivFee,setDelivFee]=useState(0);
   const [orders,setOrders]=useState([]); // 初始為空，只讀 Firebase
-  const [step,setStep]=useState(1);
-  const [nameVal,setNameVal]=useState("");
-  const [phoneVal,setPhoneVal]=useState("");
-  const [cart,setCart]=useState({});
-  const [addonQty,setAddonQty]=useState({});
-  const [pickup,setPickup]=useState("外帶");
-  const [addr,setAddr]=useState("");
-  const [pay,setPay]=useState("現金");
-  const [selDate,setSelDate]=useState(null);
-  const [time,setTime]=useState("");
-  const [note,setNote]=useState("");
+  const [D]=useState(()=>loadDraft()||{}); // 上次沒送出的草稿
+  const [step,setStep]=useState(()=>{const st=Number(D.step)||1; if(st<2||st>4) return 1; const hasCart=D.cart&&Object.values(D.cart).some(q=>q>0); return (st>=3&&!hasCart)?2:st;});
+  const [nameVal,setNameVal]=useState(()=>String(D.name||""));
+  const [phoneVal,setPhoneVal]=useState(()=>String(D.phone||""));
+  const [cart,setCart]=useState(()=>(D.cart&&typeof D.cart==="object")?D.cart:{});
+  const [addonQty,setAddonQty]=useState(()=>(D.addonQty&&typeof D.addonQty==="object")?D.addonQty:{});
+  const [pickup,setPickup]=useState(()=>["外帶","外送","內用"].includes(D.pickup)?D.pickup:"外帶");
+  const [addr,setAddr]=useState(()=>String(D.addr||""));
+  const [pay,setPay]=useState(()=>["現金","EFT","餐券"].includes(D.pay)?D.pay:"現金");
+  const [selDate,setSelDate]=useState(()=>D.selDate?(getDates().find(d=>fmtKey(d)===D.selDate)||null):null);
+  const [time,setTime]=useState(()=>String(D.time||""));
+  const [note,setNote]=useState(()=>String(D.note||""));
   const [copied,setCopied]=useState(false);
   const [ordNo,setOrdNo]=useState("");
   const [fbNo,setFbNo]=useState(false); // 這次用的是備援編號（取號失敗）
@@ -677,12 +683,25 @@ function App(){
   const [setErrMsg,setSetErrMsg]=useState(""); // 設定頁驗證訊息
   const [todayCounter,setTodayCounter]=useState(null);   // 後台：今天 order_counters 的值
   const [pForm,setPForm]=useState({type:"order_discount",label:"",pct:"",itemId:"",addonName:"",addonPrice:""});
-  const [distance,setDistance]=useState("");
+  const [distance,setDistance]=useState(()=>String(D.distance||""));
   const [eftProof,setEftProof]=useState("");
   const [eftProofFile,setEftProofFile]=useState(null);
   const [errs,setErrs]=useState({});
   const [activeSec,setActiveSec]=useState(0); // 選餐頁目前亮起的分類頁籤 // 欄位旁的錯誤提示（取代 alert）
-  const nRef=useRef(""),phRef=useRef(""),adRef=useRef(""),noRef=useRef(""),emailRef=useRef(""),pwRef=useRef(""),minRef=useRef(null),feeRef=useRef(null);
+  const nRef=useRef(D.name||""),phRef=useRef(D.phone||""),adRef=useRef(D.addr||""),noRef=useRef(D.note||""),emailRef=useRef(""),pwRef=useRef(""),minRef=useRef(null),feeRef=useRef(null);
+  const modeRef=useRef(mode),stepRef=useRef(step); modeRef.current=mode; stepRef.current=step;
+  const draftRef=useRef(null);
+  draftRef.current=()=>({step,name:nRef.current||nameVal,phone:phRef.current||phoneVal,cart,addonQty,pickup,addr:adRef.current||addr,pay,selDate:selDate?fmtKey(selDate):"",time,note:noRef.current||note,distance});
+  useEffect(()=>{ // 步驟或內容改變就存；離開頁面（重新整理、切 App）時再存一次，抓到還沒按下一步的輸入
+    if(mode!=="customer"||step>4) return;
+    const d=draftRef.current(); const empty=!d.name&&!d.phone&&!Object.values(d.cart||{}).some(q=>q>0);
+    if(empty&&step===1) clearDraft(); else writeDraft(d);
+  },[mode,step,nameVal,phoneVal,cart,addonQty,pickup,addr,pay,selDate,time,note,distance]);
+  useEffect(()=>{
+    const f=()=>{ if(document.visibilityState==="hidden"||document.visibilityState===undefined){ if(modeRef.current==="customer"&&stepRef.current<=4){ const d=draftRef.current(); if(d.name||d.phone||Object.values(d.cart||{}).some(q=>q>0)) writeDraft(d); } } };
+    document.addEventListener("visibilitychange",f); window.addEventListener("pagehide",f);
+    return ()=>{ document.removeEventListener("visibilitychange",f); window.removeEventListener("pagehide",f); };
+  },[]);
   const wantAdminRef=useRef(false); // 使用者是否剛按了登入（登入成功後才自動進後台）
 
   // 確認此使用者是否為店主（admin 宣告或 /staff/{uid}===true），最多等 8 秒，逾時丟出錯誤
@@ -1147,6 +1166,7 @@ function App(){
 
     // 跳到 step 5（提交完成頁面）；成功存入才自動開啟 WhatsApp，否則顯示警告讓客人手動傳送
     setSubmitting(false);
+    clearDraft();
     setStep(5);
     if(result==="ok") setTimeout(()=>{window.location.href=waUrl;},400);
   };
@@ -1155,7 +1175,7 @@ function App(){
     if(navigator.clipboard){navigator.clipboard.writeText(txt).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2500);});}
     else{const t=document.createElement("textarea");t.value=txt;document.body.appendChild(t);t.select();document.execCommand("copy");document.body.removeChild(t);setCopied(true);setTimeout(()=>setCopied(false),2500);}
   };
-  const reset=()=>{setErrs({});nRef.current="";phRef.current="";adRef.current="";noRef.current="";setStep(1);setNameVal("");setPhoneVal("");setCart({});setAddonQty({});setPickup("外帶");setAddr("");setPay("現金");setSelDate(null);setTime("");setNote("");setCopied(false);setOrdNo("");setFbNo(false);setDistance("");setEftProof("");setEftProofFile(null);setSubmittedTxt("");setSubmitting(false);setSaveStatus("");setPendingKey("");curKeyRef.current="";setSubmitErr("");};
+  const reset=()=>{clearDraft();setErrs({});nRef.current="";phRef.current="";adRef.current="";noRef.current="";setStep(1);setNameVal("");setPhoneVal("");setCart({});setAddonQty({});setPickup("外帶");setAddr("");setPay("現金");setSelDate(null);setTime("");setNote("");setCopied(false);setOrdNo("");setFbNo(false);setDistance("");setEftProof("");setEftProofFile(null);setSubmittedTxt("");setSubmitting(false);setSaveStatus("");setPendingKey("");curKeyRef.current="";setSubmitErr("");};
   const addPromo=()=>{
     if(!pForm.label){alert("⚠️ 請輸入促銷名稱");return;}
     if(pForm.type!=="addon"&&!pForm.pct){alert("⚠️ 請輸入折扣 %");return;}
