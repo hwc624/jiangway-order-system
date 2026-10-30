@@ -103,17 +103,18 @@ const MENU=[
     {id:"d1",name:"麥香紅茶",nameEn:"Wheat Black Tea",price:20},
     {id:"d2",name:"麥香奶茶",nameEn:"Wheat Milk Tea",price:20,img:"milktea",imgSrc:"ai"},
     {id:"d9",name:"阿薩姆奶茶",nameEn:"Assam Milk Tea",price:20},
-    {id:"d6",name:"Valpre 礦泉水",nameEn:"Valpre Still Water",price:20},
-    {id:"d7",name:"Valpre 氣泡水",nameEn:"Valpre Sparkling Water",price:20},
     {id:"d11",name:"冬瓜茶",nameEn:"Winter Melon Tea",price:30},
     {id:"d4",name:"猛將椰奶",nameEn:"Coconut Milk Drink",price:30},
     {id:"d5",name:"黑松沙士",nameEn:"Heysong Sarsaparilla",price:30},
     {id:"d8",name:"可爾必思",nameEn:"Calpis",price:30},
     {id:"d10",name:"蘋果西打",nameEn:"Apple Cider Soda",price:30},
   ]},
-  {cat:"🧊 冷凍商品 FROZEN ITEMS",items:[
-    {id:"f1",name:"芋粿巧（4個）",nameEn:"Taro Cake (4pcs)",price:90},
-  ]},
+];
+// 已下架品項（2026-10 從選單拿掉）：客人看不到，但後台核對舊訂單金額時還要認得它們
+const RETIRED_ITEMS=[
+  {id:"d6",name:"Valpre 礦泉水",nameEn:"Valpre Still Water",price:20},
+  {id:"d7",name:"Valpre 氣泡水",nameEn:"Valpre Sparkling Water",price:20},
+  {id:"f1",name:"芋粿巧（4個）",nameEn:"Taro Cake (4pcs)",price:90},
 ];
 const ALL=MENU.flatMap(c=>c.items);
 // 滷肉飯固定 R75，忽略 Firebase 的覆蓋價格
@@ -609,6 +610,34 @@ function AnalyticsTab({orders,BORDER,RED,NAVY,DARK}){
   );
 }
 
+// 新品輪播 banner：只顯示「新品且未售完」的品項；只剩 1 張不輪播、0 張整個消失（版面恢復無 banner）
+function NewBanner({list}){
+  const rm=useRef(typeof matchMedia==="function"&&matchMedia("(prefers-reduced-motion: reduce)").matches).current;
+  const [i0,setI]=useState(0),[user,setUser]=useState(rm),[hold,setHold]=useState(false),[hidden,setHidden]=useState(false);
+  const viewRef=useRef(null),stRef=useRef(null);
+  const n=list.length, i=Math.min(i0,Math.max(0,n-1));
+  const go=(k,smooth)=>{const j=(k+n)%n;setI(j);const v=viewRef.current;if(v&&v.children[j])v.scrollTo({left:v.children[j].offsetLeft,behavior:smooth&&!rm?"smooth":"auto"});};
+  useEffect(()=>{if(n<2||user||hold||hidden)return;const t=setInterval(()=>go(i+1,true),4500);return ()=>clearInterval(t);},[n,user,hold,hidden,i]);
+  useEffect(()=>{const f=()=>setHidden(document.hidden);document.addEventListener("visibilitychange",f);return ()=>document.removeEventListener("visibilitychange",f);},[]);
+  useEffect(()=>{const v=viewRef.current;if(v&&n&&i0>=n){v.scrollTo({left:v.children[n-1].offsetLeft,behavior:"auto"});}},[n]);
+  if(n===0) return null;
+  const onScroll=e=>{const v=e.currentTarget;clearTimeout(stRef.current);stRef.current=setTimeout(()=>{const k=Math.round(v.scrollLeft/Math.max(1,v.clientWidth));if(k>=0&&k<n)setI(k);},80);};
+  return <section className="jw-banner" id="jwNewBanner" aria-roledescription="carousel" aria-label="新品推出 New arrivals"
+    onMouseEnter={()=>setHold(true)} onMouseLeave={()=>setHold(false)} onTouchStart={()=>setHold(true)} onTouchEnd={()=>setHold(false)} onFocus={()=>setHold(true)} onBlur={()=>setHold(false)}>
+    <div className="jw-banner__view" tabIndex={0} ref={viewRef} onScroll={onScroll}>
+      {list.map((x,k)=><div className="jw-slide" key={x.id} role="group" aria-roledescription="slide" aria-label={`第 ${k+1} 張，共 ${n} 張`} aria-hidden={n>1&&k!==i?"true":undefined}>
+        {x.img&&<img src={`assets/img/${x.img}.webp`} alt="" loading={k?"lazy":undefined}/>}
+        {x.img&&<span className="jw-slide__src">{x.imgSrc==="ai"?"AI 示意":"實拍"}</span>}
+        <div className="jw-slide__txt"><span className="jw-slide__tag">新品推出</span><div className="jw-slide__h">{x.name}<b>R{x.price}</b></div>{x.nameEn&&<p className="jw-slide__p">{x.nameEn}</p>}</div>
+      </div>)}
+    </div>
+    {n>1&&<div className="jw-banner__ctl">
+      {list.map((x,k)=><button key={x.id} type="button" className="jw-banner__dot" aria-label={`第 ${k+1} 張`} aria-current={k===i?"true":undefined} onClick={()=>go(k,true)}/>)}
+      <button type="button" className="jw-banner__pp" aria-label={user?"播放輪播":"暫停輪播"} onClick={()=>setUser(u=>!u)}>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d={user?"M8 5v14l11-7z":"M6 5h4v14H6zM14 5h4v14h-4z"}/></svg></button>
+    </div>}
+  </section>;
+}
 function App(){
   const [mode,setMode]=useState("customer");
   const [adminTab,setAdminTab]=useState("stock");
@@ -867,6 +896,8 @@ function App(){
   ];
 
   const qty=id=>cart[id]||0;
+  // 新品 = 店家後台「新增商品」上架的自訂商品，加上菜單資料裡標了 isNew:true 的品項；售完（或被標售完）就不輪播
+  const newBannerList=effectiveAll.filter(i=>(i._custom||i.isNew)&&!soldOut[i.id]);
   const cartItems=effectiveAll.filter(i=>qty(i.id)>0&&!soldOut[i.id]); // 售完的品項不計入訂單
   const sub=cartItems.reduce((s,i)=>s+i.price*qty(i.id),0);
   const {disc,discLines,addonList}=calcPromo(cartItems,qty,promos);
@@ -1386,7 +1417,7 @@ function App(){
                 </div>
                 {os.map(o=>{
                   // 安全檢查：依目前菜單／促銷／外送費重新計算應收金額，發現不符就標紅
-                  const chk=repriceOrder(o,effectiveAll,promos,delivFee);
+                  const chk=repriceOrder(o,[...effectiveAll,...RETIRED_ITEMS.filter(r=>!effectiveAll.some(x=>x.id===r.id))],promos,delivFee);
                   const suspicious=chk.flag;
                   return(
                   <div key={o._fbKey||(o.no+o.ts)} style={{background:"var(--jw-bg-card)",border:`1.5px solid ${suspicious?RED:BORDER}`,borderRadius:10,padding:"12px",marginBottom:10}}>
@@ -1505,6 +1536,7 @@ function App(){
 
         {step===2&&<><div className="jw-layout">
           <main className="jw-menu">
+            <NewBanner list={newBannerList}/>
             {effectiveMenu.map((cat,ci)=>(
               <section key={cat.cat} className="jw-section" id={`jw-sec-${ci}`}>
                 <header className="jw-section__head"><span className="jw-section__num">{String(ci+1).padStart(2,"0")}</span><h2 className="jw-section__title" style={{fontSize:22}}>{cat.cat}</h2></header>

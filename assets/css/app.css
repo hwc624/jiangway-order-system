@@ -39,3 +39,31 @@
   .jw-col__end{margin-top:auto;padding-top:var(--jw-sp-6)}
 }
 .jw-split > *{min-width:0}
+
+/* 夜市霓虹 · 新品輪播 banner（jw-banner）。沒有未售完的新品時，JS 會把整個區塊移除，版面回到無 banner。 */
+.jw-banner{position:relative;margin:var(--jw-sp-3) 0 var(--jw-sp-4);min-width:0}
+.jw-menu{min-width:0}
+.jw-banner__view{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;border-radius:var(--jw-r-lg);border:1px solid var(--jw-line-main);box-shadow:var(--jw-glow-amber);-webkit-overflow-scrolling:touch}
+.jw-banner__view::-webkit-scrollbar{display:none}
+.jw-slide{flex:0 0 100%;scroll-snap-align:center;position:relative;height:104px;display:flex;align-items:center;overflow:hidden;background:var(--jw-bg-tile)}
+.jw-slide img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:70% 45%}
+.jw-slide::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(22,23,27,.92) 0%,rgba(22,23,27,.72) 45%,rgba(22,23,27,0) 88%)}
+.jw-slide__txt{position:relative;z-index:1;padding:0 var(--jw-sp-4);max-width:66%}
+.jw-slide__tag{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.12em;color:var(--jw-bg-page);background:var(--jw-amber-main);border-radius:var(--jw-r-sm);padding:1px 7px;margin-bottom:4px}
+.jw-slide__h{font-size:19px;font-weight:900;line-height:1.2;color:var(--jw-text-main);text-shadow:var(--jw-glow-text)}
+.jw-slide__h b{color:var(--jw-amber-main);font-weight:800;margin-left:6px;font-size:16px}
+.jw-slide__p{font-size:12px;color:var(--jw-text-muted);margin-top:2px}
+.jw-slide__src{position:absolute;z-index:1;right:8px;top:6px;font-size:11px;font-weight:700;color:var(--jw-text-main);background:rgba(22,23,27,.78);border:1px solid var(--jw-line-strong);border-radius:var(--jw-r-sm);padding:0 6px}
+/* 控制列疊在 banner 右下角，不額外佔高度；每個按鈕觸控範圍 44px */
+.jw-banner__ctl{position:absolute;right:6px;bottom:2px;height:32px;background:rgba(22,23,27,.8);border-radius:99px;padding:0 0 0 6px;display:flex;align-items:center;z-index:2}
+.jw-banner__dot{width:30px;height:44px;border:0;background:none;display:grid;place-items:center;cursor:pointer;padding:0}
+.jw-banner__dot::before{content:"";width:7px;height:7px;border-radius:99px;background:var(--jw-text-muted);opacity:.7;transition:width .25s,background .25s}
+.jw-banner__dot[aria-current="true"]::before{width:18px;opacity:1;background:var(--jw-accent-main);box-shadow:var(--jw-glow-accent)}
+.jw-banner__pp{width:44px;height:44px;border:0;background:none;color:var(--jw-text-main);display:grid;place-items:center;cursor:pointer}
+.jw-banner__pp svg{width:16px;height:16px;fill:currentColor}
+.jw-banner__dot:focus-visible,.jw-banner__pp:focus-visible,.jw-banner__view:focus-visible{outline:3px solid var(--jw-amber-main);outline-offset:2px}
+@media (min-width:1000px){.jw-slide{height:140px}.jw-slide__h{font-size:26px}.jw-slide__p{font-size:14px}.jw-slide__txt{padding:0 var(--jw-sp-6);max-width:50%}}
+
+.jw-slide:not(:has(img)){background:linear-gradient(90deg,var(--jw-bg-tile),var(--jw-bg-raised))}
+.jw-slide:not(:has(img))::after{display:none}
+.jw-slide__txt{max-width:66%}
