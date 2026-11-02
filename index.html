@@ -491,11 +491,15 @@ function AnalyticsTab({orders,BORDER,RED,NAVY,DARK}){
   // 客戶分析
   const custMap={};
   filtered.forEach(o=>{
-    const k=o.name||"未知";
-    if(!custMap[k])custMap[k]={name:k,orders:0,total:0};
+    const shown=String(o.name||"").replace(/\s+/g," ").trim()||"未知";
+    const ph=String(o.phone||"").replace(/\D/g,"");
+    const k=shown.toLowerCase()+"|"+ph;
+    if(!custMap[k])custMap[k]={name:shown,orders:0,total:0,forms:{}};
+    custMap[k].forms[shown]=(custMap[k].forms[shown]||0)+1;
     custMap[k].orders+=1;
     custMap[k].total+=Number(o.total)||0;
   });
+  Object.values(custMap).forEach(c=>{c.name=Object.entries(c.forms).sort((a,b)=>b[1]-a[1]||(a[0]<b[0]?-1:1))[0][0];});
   const custList=Object.values(custMap).sort((a,b)=>b.total-a.total);
 
   // 每日分析
@@ -1007,9 +1011,12 @@ function App(){
   const go2=()=>{
     setNameVal(nRef.current);
     setPhoneVal(phRef.current);
-    if(!nRef.current||!nRef.current.trim()){
-      setErrs({name:"請輸入姓名 Please enter your name"});
-      focusErr("custName");
+    const e1={};
+    if(!nRef.current||!nRef.current.trim())e1.name="請輸入姓名 Please enter your name";
+    if(String(phRef.current||"").replace(/\D/g,"").length<7)e1.phone="請輸入電話（至少 7 碼數字）Please enter a contact number (at least 7 digits)";
+    if(Object.keys(e1).length){
+      setErrs(e1);
+      focusErr(e1.name?"custName":"custPhone");
       return;
     }
     setErrs({});
@@ -1547,9 +1554,9 @@ function App(){
           </div>
           <div><div className="jw-block">
             <p className="jw-block__title">顧客資料 CUSTOMER INFO</p>
-            {errs.name&&<div className="jw-formerror" role="alert"><Ico n="alert" s={18}/><span>還有 1 個欄位要填 · 1 field needs attention</span></div>}
+            {(errs.name||errs.phone)&&<div className="jw-formerror" role="alert"><Ico n="alert" s={18}/><span>還有 {(errs.name?1:0)+(errs.phone?1:0)} 個欄位要填 · {(errs.name?1:0)+(errs.phone?1:0)} field needs attention</span></div>}
             <label className={fcls("name")}><span className="jw-field__label">姓名 <span>Name</span></span><span className="jw-field__control"><Ico n="user" s={18}/><input id="custName" className="jw-field__input" type="text" defaultValue={nRef.current} onChange={e=>{nRef.current=e.target.value;clr("name");}} placeholder="請輸入姓名 Enter name" maxLength={100} aria-invalid={errs.name?"true":undefined}/></span><FieldMsg k="name"/></label>
-            <label className="jw-field"><span className="jw-field__label">電話 <span>Contact No.（選填 Optional）</span></span><span className="jw-field__control"><Ico n="phone" s={18}/><input id="custPhone" className="jw-field__input" type="tel" defaultValue={phRef.current} onChange={e=>{phRef.current=e.target.value;}} placeholder="+27 82 000 0000" maxLength={40}/></span></label>
+            <label className={fcls("phone")}><span className="jw-field__label">電話 <span>Contact No.（必填 Required）</span></span><span className="jw-field__control"><Ico n="phone" s={18}/><input id="custPhone" className="jw-field__input" type="tel" defaultValue={phRef.current} onChange={e=>{phRef.current=e.target.value;clr("phone");}} placeholder="+27 82 000 0000" maxLength={40} aria-invalid={errs.phone?"true":undefined}/></span><FieldMsg k="phone"/></label>
             <div className="jw-actions" style={{gridTemplateColumns:"1fr"}}><button onClick={go2} className="jw-btn jw-btn--primary">下一步 Next <Ico n="right" s={18}/></button></div>
           </div></div>
         </div></main>}
@@ -1635,6 +1642,7 @@ function App(){
               </div>
               {pickup==="外送"&&<div id="courierNote" className="jw-panel" style={{marginTop:10,fontSize:14,lineHeight:1.7,padding:"12px 14px",borderColor:"var(--jw-amber-main)"}}>
                 🛵 請自行在 Uber、Bolt 等外送平台叫外送員，到店取餐。取餐時請告知訂單編號與姓名。店家不負責配送。<br/>
+                📍 取餐地址 Pickup address：32 Wessel Rd, Edenburg, Rivonia<br/>
                 <span style={{color:"var(--jw-text-muted)",fontSize:13}}>Please book a courier yourself on Uber, Bolt or a similar app to collect your order from our shop. The courier should give your order number and name at pickup. We do not provide delivery.</span>
               </div>}
             </div>
