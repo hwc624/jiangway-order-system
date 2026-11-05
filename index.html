@@ -956,7 +956,7 @@ function App(){
   const fee=0;
   const total=sub-disc+addonTotal+fee;
   const belowMin=minOrder>0&&sub<minOrder;
-  const activePromos=promos.filter(p=>p.active);
+  const activePromos=promos.filter(p=>p.active&&!(p.type==="item_discount"&&!visibleAll.some(i=>i.id===p.itemId)));
   const slots=selDate?getSlots(selDate):[];
   const dates=getDates().filter(d=>!isToday(d)||getSlots(d).length>0); // 今天已沒有可選時段就不顯示「今天」
 
@@ -1348,7 +1348,7 @@ function App(){
                 const locked=LOCKED_PRICES[item.id]!==undefined;
                 return(
                   <div key={item.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,padding:"6px 8px",background:"var(--jw-bg-raised)",borderRadius:6}}>
-                    <span style={{flex:1,fontSize:12}}>{item.name}{locked?" 🔒":""}</span>
+                    <span style={{flex:1,fontSize:12}}>{item.name}{locked?" 🔒":""}{ovr.hidden&&<span className="jwPriceDel" style={{marginLeft:6,fontSize:10,color:"#b91c1c",border:"1px solid #b91c1c",borderRadius:4,padding:"0 4px"}}>已刪除</span>}</span>
                     <span style={{fontSize:11,color:"var(--jw-text-muted)"}}>原 R{item.price}</span>
                     <input type="number" key={item.id+"-"+curPrice} defaultValue={curPrice} disabled={locked} placeholder="新價" style={{width:70,padding:"4px 6px",borderRadius:4,border:`1px solid ${BORDER}`,fontSize:12,background:locked?"var(--jw-bg-raised)":"var(--jw-bg-card)"}} onBlur={e=>{
                       if(locked)return;
