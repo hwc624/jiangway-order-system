@@ -119,9 +119,12 @@ const RETIRED_ITEMS=[
 const ALL=MENU.flatMap(c=>c.items);
 // 後台新增的商品：上架後在「⭐ 新品」區與輪播停留 NEW_ITEM_DAYS 天，之後自動移入上架時選的類別（純前端依 createdAt 計算）
 const NEW_ITEM_DAYS=30;
-const CAT_NAMES=MENU.map(c=>c.cat);
-const customMoveAt=c=>(c.category&&CAT_NAMES.includes(c.category)&&Number(c.createdAt))?Number(c.createdAt)+NEW_ITEM_DAYS*864e5:0;
-const customMoved=c=>{const t=customMoveAt(c);return t>0&&Date.now()>=t;};
+const BUILTIN_CATS=MENU.map(c=>c.cat);
+// activeKeys＝目前「未隱藏」的類別 key（內建＋自訂）；隱藏／刪除的類別視為不存在，新品留在新品區
+const customMoveAt=(c,activeKeys)=>(c.category&&(activeKeys||BUILTIN_CATS).includes(c.category)&&Number(c.createdAt))?Number(c.createdAt)+NEW_ITEM_DAYS*864e5:0;
+const customMoved=(c,activeKeys)=>{const t=customMoveAt(c,activeKeys);return t>0&&Date.now()>=t;};
+const catLabel=c=>{const zh=(c.nameZh||"").trim(),en=(c.nameEn||"").trim();return en?zh+" "+en:zh;};
+const normCatName=s=>String(s||"").trim().replace(/\s+/g," ").toLowerCase();
 // 文字放不下時先縮小字級（最小 min px），還放不下才允許換行，不會被切掉
 function Fit({as:T="div",className,style,min=11,children}){
   const r=useRef(null);
@@ -678,6 +681,7 @@ function App(){
   const [promos,setPromos]=useState([]);
   const [menuOverrides,setMenuOverrides]=useState({}); // {itemId: {price, name, soldOut}}
   const [customItems,setCustomItems]=useState([]); // 自訂新商品
+  const [catMeta,setCatMeta]=useState({}); // 類別覆蓋／自訂：id -> {key,nameZh,nameEn,builtin,hidden,order}
   const [minOrder,setMinOrder]=useState(0);
   const [delivFee,setDelivFee]=useState(0);
   const [orders,setOrders]=useState([]); // 初始為空，只讀 Firebase
@@ -895,6 +899,19 @@ function App(){
     return ()=>customRef.off("value",unsubscribe);
   },[]);
 
+  // Firebase 同步類別（自訂＋內建隱藏）
+  useEffect(()=>{
+    if(!window.fbDb)return;
+    const catRef=window.fbDb.ref("categories");
+    const unsubscribe=catRef.on("value",snapshot=>{
+      const data={};
+      snapshot.forEach(c=>{const v=c.val(); if(v) data[c.key]={...v,_fbKey:c.key};});
+      setCatMeta(data);
+      console.log("📡 從 Firebase 更新類別，共", Object.keys(data).length, "項");
+    },err=>{console.warn("⚠️ 類別讀取失敗（可能 Firebase 規則未設定）:", err.message);});
+    return ()=>catRef.off("value",unsubscribe);
+  },[]);
+
   // Firebase 同步設定（最低消費、外送費）
   useEffect(()=>{
     if(!window.fbDb)return;
@@ -907,7 +924,21 @@ function App(){
     return ()=>setRef.off("value",unsubscribe);
   },[]);
 
-  const toCustom=c=>({id:c.id,name:c.name,nameEn:c.nameEn,price:c.price,_custom:true,_fbKey:c._fbKey,_hidden:!!c.hidden,_moved:customMoved(c)});
+  // 合併內建類別＋自訂類別；內建「移除」＝hidden（可恢復），不可永久刪
+  const catMetaList=Object.values(catMeta);
+  const allCats=(()=>{
+    const list=MENU.map((c,i)=>{
+      const m=catMetaList.find(x=>x.builtin&&x.key===c.cat);
+      return {id:m&&m._fbKey||("builtin_"+i),key:c.cat,nameZh:CAT_SHORT(c.cat),nameEn:"",builtin:true,hidden:!!(m&&m.hidden),order:i,items:c.items};
+    });
+    const customs=catMetaList.filter(x=>!x.builtin).slice().sort((a,b)=>(Number(a.order)||0)-(Number(b.order)||0)||String(a.key).localeCompare(String(b.key)));
+    customs.forEach((m,i)=>list.push({id:m._fbKey,key:m.key,nameZh:m.nameZh||CAT_SHORT(m.key),nameEn:m.nameEn||"",builtin:false,hidden:!!m.hidden,order:MENU.length+i,items:[]}));
+    return list;
+  })();
+  const allCatKeys=allCats.map(c=>c.key);
+  const activeCatKeys=allCats.filter(c=>!c.hidden).map(c=>c.key);
+  // 已移入的品項：即使類別被隱藏仍算「已移入」（不跑回新品）；客人端因類別隱藏而看不到
+  const toCustom=c=>({id:c.id,name:c.name,nameEn:c.nameEn,price:c.price,_custom:true,_fbKey:c._fbKey,_hidden:!!c.hidden,_moved:customMoved(c,allCatKeys)});
   // 計算有效的菜單（套用價格修改 + 自訂商品）
   const effectiveAll=[
     ...ALL.map(i=>{
@@ -927,19 +958,23 @@ function App(){
   ];
   // 已刪除（hidden）的品項：客人看不到、不能點；但 effectiveAll 仍保留，舊訂單核對金額時認得
   const visibleAll=effectiveAll.filter(i=>!i._hidden);
+  const mapItem=i=>{const ovr=menuOverrides[i.id];return ovr?{...i,price:getPrice(i,ovr),name:ovr.name||i.name,nameEn:ovr.nameEn||i.nameEn}:{...i,price:getPrice(i,null)};};
   const effectiveMenu=[
-    ...MENU.map(cat=>({
-      ...cat,
-      items:[...cat.items.filter(i=>!(menuOverrides[i.id]&&menuOverrides[i.id].hidden)).map(i=>{
-        const ovr=menuOverrides[i.id];
-        if(ovr){
-          return {...i,price:getPrice(i,ovr),name:ovr.name||i.name,nameEn:ovr.nameEn||i.nameEn};
-        }
-        return {...i,price:getPrice(i,null)};
-      }),...customItems.filter(c=>!c.hidden&&customMoved(c)&&c.category===cat.cat).map(toCustom)]
+    ...allCats.filter(c=>!c.hidden).map(cat=>({
+      cat:cat.key,
+      items:[
+        ...(cat.builtin?(cat.items||[]).filter(i=>!(menuOverrides[i.id]&&menuOverrides[i.id].hidden)).map(mapItem):[]),
+        ...customItems.filter(c=>!c.hidden&&customMoved(c,allCatKeys)&&c.category===cat.key).map(toCustom)
+      ]
     })),
-    {cat:"⭐ 新品 NEW ITEMS",items:customItems.filter(c=>!c.hidden&&!customMoved(c)).map(toCustom)}
+    {cat:"⭐ 新品 NEW ITEMS",items:customItems.filter(c=>!c.hidden&&!customMoved(c,allCatKeys)).map(toCustom)}
   ].filter(cat=>cat.items.length>0);
+  const countCatItems=key=>{
+    const b=MENU.find(c=>c.cat===key);
+    let n=b?b.items.filter(i=>!(menuOverrides[i.id]&&menuOverrides[i.id].hidden)).length:0;
+    n+=customItems.filter(c=>!c.hidden&&c.category===key).length;
+    return n;
+  };
 
   // 品項被後台刪除：從購物車（含 localStorage 草稿）拿掉
   const hiddenKey=effectiveAll.filter(i=>i._hidden).map(i=>i.id).join(",");
@@ -1369,12 +1404,95 @@ function App(){
             </div>
           ))}
           
+          {/* 類別管理：新增／隱藏（內建不可永久刪）／自訂可永久刪（僅無品項） */}
+          <div id="jwCatAdmin" style={{marginTop:20,borderTop:`1px solid ${BORDER}`,paddingTop:14}}>
+            <div style={{fontSize:13,fontWeight:500,color:NAVY,marginBottom:10}}>📂 類別管理 Categories</div>
+            <div style={{fontSize:11,color:"var(--jw-text-muted)",marginBottom:10,lineHeight:1.5}}>內建類別只能隱藏（可恢復）；自訂類別可隱藏或永久刪除（僅限沒有品項）。隱藏後客人看不到該分類與其中品項，舊訂單不受影響。</div>
+            {allCats.filter(c=>!c.hidden).map(c=>{
+              const n=countCatItems(c.key);
+              return(
+              <div key={c.id} className="jwCatItem" data-key={c.key} data-builtin={c.builtin?"1":"0"} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,padding:"10px 12px",background:"var(--jw-bg-raised)",borderRadius:8,border:`1px solid ${BORDER}`}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:13,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.key}</div>
+                  <div style={{fontSize:11,color:"var(--jw-text-muted)",marginTop:2}}>{c.builtin?"內建 Built-in":"自訂 Custom"} · {n} 項</div>
+                </div>
+                <button type="button" aria-label={`隱藏類別 ${c.key}`} onClick={()=>{
+                  if(!window.fbDb)return;
+                  const msg=n>0?`確定隱藏「${c.key}」？客人將看不到此分類與其中 ${n} 個品項（可恢復；品項不會被刪除）`:`確定隱藏「${c.key}」？`;
+                  if(!confirm(msg))return;
+                  if(c.builtin){
+                    const existing=catMetaList.find(x=>x.builtin&&x.key===c.key);
+                    const path=existing?existing._fbKey:c.id; // c.id 為 builtin_N
+                    const payload={key:c.key,nameZh:CAT_SHORT(c.key),nameEn:"",builtin:true,hidden:true,order:c.order};
+                    window.fbDb.ref(`categories/${path}`).update(existing?{hidden:true}:payload).catch(fbErr("隱藏類別"));
+                  }else{
+                    window.fbDb.ref(`categories/${c.id}/hidden`).set(true).catch(fbErr("隱藏類別"));
+                  }
+                }} style={{flexShrink:0,minHeight:40,padding:"8px 12px",borderRadius:8,border:`1.5px solid ${RED}`,background:"var(--jw-bg-card)",color:RED,fontSize:13,fontWeight:500,cursor:"pointer",whiteSpace:"nowrap"}}>隱藏 Hide</button>
+                {!c.builtin&&n===0&&<button type="button" aria-label={`永久刪除類別 ${c.key}`} onClick={()=>{
+                  if(confirm(`永久刪除「${c.key}」？無法恢復`)&&window.fbDb) window.fbDb.ref(`categories/${c.id}`).remove().catch(fbErr("刪除類別"));
+                }} style={{flexShrink:0,minHeight:40,padding:"8px 12px",borderRadius:8,border:`1.5px solid ${RED}`,background:"var(--jw-bg-card)",color:RED,fontSize:13,cursor:"pointer",whiteSpace:"nowrap"}}>永久刪除</button>}
+              </div>);})}
+            {(()=>{const hid=allCats.filter(c=>c.hidden);return hid.length>0&&<div id="jwCatDeleted" style={{marginTop:12}}>
+              <div style={{fontSize:12,fontWeight:500,color:NAVY,marginBottom:8}}>已隱藏類別 Hidden Categories</div>
+              {hid.map(c=>{
+                const n=countCatItems(c.key);
+                return(
+                <div key={c.id} className="jwCatDel" data-key={c.key} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,padding:"10px 12px",background:"var(--jw-bg-raised)",borderRadius:8,opacity:.9}}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:13,textDecoration:"line-through",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.key}</div>
+                    <div style={{fontSize:11,color:"var(--jw-text-muted)"}}>{c.builtin?"內建":"自訂"} · 仍有 {n} 個品項（客人看不到）</div>
+                  </div>
+                  <button type="button" aria-label={`恢復類別 ${c.key}`} onClick={()=>{
+                    if(!window.fbDb)return;
+                    if(c.builtin){
+                      const existing=catMetaList.find(x=>x.builtin&&x.key===c.key);
+                      if(existing) window.fbDb.ref(`categories/${existing._fbKey}/hidden`).remove().catch(fbErr("恢復類別"));
+                    }else{
+                      window.fbDb.ref(`categories/${c.id}/hidden`).remove().catch(fbErr("恢復類別"));
+                    }
+                  }} style={{flexShrink:0,minHeight:40,padding:"8px 12px",borderRadius:8,border:`1.5px solid ${BORDER}`,background:"var(--jw-bg-card)",color:DARK,fontSize:13,cursor:"pointer",whiteSpace:"nowrap"}}>恢復 Restore</button>
+                  {!c.builtin&&n===0&&<button type="button" aria-label={`永久刪除類別 ${c.key}`} onClick={()=>{
+                    if(confirm(`永久刪除「${c.key}」？無法恢復`)&&window.fbDb) window.fbDb.ref(`categories/${c.id}`).remove().catch(fbErr("刪除類別"));
+                  }} style={{flexShrink:0,minHeight:40,padding:"8px 12px",borderRadius:8,border:`1.5px solid ${RED}`,background:"var(--jw-bg-card)",color:RED,fontSize:13,cursor:"pointer",whiteSpace:"nowrap"}}>永久刪除</button>}
+                </div>);})}
+            </div>;})()}
+            <div style={{marginTop:14,padding:"12px",background:"var(--jw-bg-card)",border:`1.5px solid ${BORDER}`,borderRadius:10}}>
+              <div style={{fontSize:13,fontWeight:500,color:NAVY,marginBottom:8}}>新增類別 Add Category</div>
+              <input id="newCatZh" aria-label="類別中文名稱" placeholder="中文名稱（必填） e.g. 小食" style={{...IS,fontSize:14}}/>
+              <input id="newCatEn" aria-label="Category English name" placeholder="English name (optional) e.g. SNACKS" style={{...IS,fontSize:14,marginTop:8}}/>
+              <button type="button" id="addCatBtn" onClick={()=>{
+                const zh=(document.getElementById("newCatZh").value||"").trim().replace(/\s+/g," ");
+                const en=(document.getElementById("newCatEn").value||"").trim().replace(/\s+/g," ");
+                if(!zh){alert("⚠️ 請輸入中文名稱");return;}
+                const key=catLabel({nameZh:zh,nameEn:en});
+                const dup=allCats.some(c=>{
+                  if(normCatName(c.key)===normCatName(key)) return true;
+                  if(normCatName(c.nameZh||"")===normCatName(zh)) return true;
+                  // 內建短名（去括號）也要比
+                  if(normCatName(CAT_SHORT(c.key))===normCatName(zh)||normCatName(CAT_SHORT(c.key))===normCatName(key)) return true;
+                  if(en&&normCatName(c.nameEn||"")===normCatName(en)) return true;
+                  return false;
+                });
+                if(dup){alert("⚠️ 類別名稱重複（不分大小寫）");return;}
+                if(!window.fbDb){alert("❌ 資料庫未連線");return;}
+                const id="cat_"+Date.now();
+                const order=allCats.reduce((m,c)=>Math.max(m,Number(c.order)||0),-1)+1;
+                window.fbDb.ref(`categories/${id}`).set({key,nameZh:zh,nameEn:en,builtin:false,hidden:false,order}).then(()=>{
+                  document.getElementById("newCatZh").value="";
+                  document.getElementById("newCatEn").value="";
+                  alert("✅ 類別已新增");
+                }).catch(fbErr("新增類別"));
+              }} style={{width:"100%",minHeight:44,background:RED,color:"var(--jw-accent-ink)",border:"none",borderRadius:8,padding:"12px",fontSize:14,fontWeight:500,cursor:"pointer",marginTop:12}}>＋ 新增類別 Add Category</button>
+            </div>
+          </div>
+
           {/* 上架新商品 */}
           <div style={{fontSize:13,fontWeight:500,color:NAVY,marginTop:20,marginBottom:10,borderTop:`1px solid ${BORDER}`,paddingTop:14}}>⭐ 上架新商品 Add New Item</div>
           <input id="newItemNameZh" placeholder="中文名稱（例：水餃 30顆）" style={{...IS,fontSize:14}}/>
           <input id="newItemNameEn" placeholder="English Name (e.g. Dumplings 30pcs)" style={{...IS,fontSize:14,marginTop:8}}/>
           <input id="newItemPrice" type="number" placeholder="價格 Price (R)" style={{...IS,fontSize:14,marginTop:8}}/>
-          <select id="newItemCat" aria-label="類別 Category" defaultValue="" style={{...IS,fontSize:14,marginTop:8}}><option value="">類別 Category（{NEW_ITEM_DAYS} 天後移入）…</option>{CAT_NAMES.map(n=><option key={n} value={n}>{n}</option>)}</select>
+          <select id="newItemCat" aria-label="類別 Category" defaultValue="" style={{...IS,fontSize:14,marginTop:8}}><option value="">類別 Category（{NEW_ITEM_DAYS} 天後移入）…</option>{activeCatKeys.map(n=><option key={n} value={n}>{n}</option>)}</select>
           <button onClick={()=>{
             const nameZh=document.getElementById("newItemNameZh").value.trim();
             const nameEn=document.getElementById("newItemNameEn").value.trim();
@@ -1401,8 +1519,10 @@ function App(){
           <div style={{marginTop:20,borderTop:`1px solid ${BORDER}`,paddingTop:14}}>
             <div style={{fontSize:13,fontWeight:500,color:NAVY,marginBottom:10}}>已上架商品 Listed Items</div>
             {customItems.filter(c=>!c.hidden).map(c=>{
-              const at=customMoveAt(c),catOk=c.category&&CAT_NAMES.includes(c.category);
-              const st=!c.category?"未設類別，留在新品區":!catOk?"類別已不存在，留在新品區":!at?"留在新品區":Date.now()>=at?"已移入正常菜單":`${Math.ceil((at-Date.now())/864e5)} 天後移入『${CAT_SHORT(c.category)}』`;
+              const catRec=allCats.find(x=>x.key===c.category);
+              const catOk=!!(catRec&&!catRec.hidden);
+              const at=customMoveAt(c,allCatKeys);
+              const st=!c.category?"未設類別，留在新品區":!catRec?"類別已不存在，留在新品區":catRec.hidden?(Date.now()>=at&&at?"類別已隱藏（已移入，客人看不到）":"類別已隱藏，留在新品區"):!at?"留在新品區":Date.now()>=at?"已移入正常菜單":`${Math.ceil((at-Date.now())/864e5)} 天後移入『${CAT_SHORT(c.category)}』`;
               return(
               <div key={c.id} className="jwAdmItem" data-id={c.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,padding:"8px 10px",background:"var(--jw-bg-raised)",borderRadius:6,border:`1px solid ${BORDER}`}}>
                 <div style={{flex:1,minWidth:0}}>
@@ -1411,7 +1531,7 @@ function App(){
                   <select aria-label={`${c.name} 類別 Category`} value={catOk?c.category:""} onChange={e=>{const v=e.target.value;if(!v||!window.fbDb||!c._fbKey)return;
                     const m=/^custom_(\d+)$/.exec(c.id||""),u={category:v};if(!Number(c.createdAt)&&m)u.createdAt=Number(m[1]);
                     window.fbDb.ref(`custom_items/${c._fbKey}`).update(u).catch(fbErr("設定類別"));}} style={{marginTop:4,maxWidth:"100%",padding:"3px 4px",borderRadius:4,border:`1px solid ${BORDER}`,fontSize:11}}>
-                    <option value="">類別 Category…</option>{CAT_NAMES.map(n=><option key={n} value={n}>{CAT_SHORT(n)}</option>)}</select>
+                    <option value="">類別 Category…</option>{activeCatKeys.map(n=><option key={n} value={n}>{CAT_SHORT(n)}</option>)}</select>
                   <div className="jwMoveSt" style={{fontSize:11,color:"var(--jw-amber-main)",marginTop:2}}>{st}</div>
                 </div>
                 <button aria-label={`刪除 ${c.name}`} onClick={()=>{

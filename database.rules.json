@@ -102,6 +102,19 @@
       }
     },
 
+
+    "categories": {
+      ".read": true,
+      ".write": "auth != null && (auth.token.admin === true || root.child('staff').child(auth.uid).val() === true)",
+      "$catId": {
+        "key":     { ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 120" },
+        "nameZh":  { ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 60" },
+        "nameEn":  { ".validate": "newData.isString() && newData.val().length <= 60" },
+        "builtin": { ".validate": "newData.isBoolean()" },
+        "hidden":  { ".validate": "newData.isBoolean()" },
+        "order":   { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9999" }
+      }
+    },
     "settings": {
       ".read": true,
       ".write": "auth != null && (auth.token.admin === true || root.child('staff').child(auth.uid).val() === true)",
