@@ -1,33 +1,33 @@
 {
+  "id": "/jiangway-order-system/",
   "name": "江味齋 JiangWay",
   "short_name": "江味齋",
   "description": "台式家常料理點餐系統",
   "start_url": "/jiangway-order-system/",
+  "scope": "/jiangway-order-system/",
   "display": "standalone",
-  "background_color": "#FDF6EC",
-  "theme_color": "#C0392B",
+  "background_color": "#16171B",
+  "theme_color": "#16171B",
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect fill='%23C0392B' width='192' height='192'/><text x='50%' y='50%' font-size='100' font-weight='bold' fill='white' text-anchor='middle' dominant-baseline='middle'>江</text></svg>",
+      "src": "icons/icon-192.png",
       "sizes": "192x192",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect fill='%23C0392B' width='512' height='512'/><text x='50%' y='50%' font-size='280' font-weight='bold' fill='white' text-anchor='middle' dominant-baseline='middle'>江</text></svg>",
+      "src": "icons/icon-512.png",
       "sizes": "512x512",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ],
-  "categories": ["food", "shopping"],
-  "screenshots": [
-    {
-      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 540 720'><rect fill='%23FDF6EC' width='540' height='720'/><rect fill='%23C0392B' width='540' height='100'/><text x='270' y='50' font-size='40' font-weight='bold' fill='white' text-anchor='middle' dominant-baseline='middle'>江味齋</text></svg>",
-      "sizes": "540x720",
-      "type": "image/svg+xml",
-      "form_factor": "narrow"
-    }
-  ]
+  "categories": ["food", "shopping"]
 }

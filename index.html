@@ -5,8 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
 <meta name="theme-color" content="#16171B"/>
 <meta name="description" content="江味齋 JiangWay - 台式家常料理點餐系統"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-title" content="江味齋"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
 <link rel="manifest" href="manifest.json"/>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect fill='%2316171B' width='192' height='192'/><text x='50%' y='50%' font-size='100' font-weight='bold' fill='%23FF4A3D' text-anchor='middle' dominant-baseline='middle'>江</text></svg>"/>
+<link rel="icon" type="image/png" sizes="48x48" href="icons/favicon-48.png"/>
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png"/>
 <title>江味齋 JiangWay</title>
 <link rel="stylesheet" href="assets/css/tokens.css"/>
 <link rel="stylesheet" href="assets/css/components.css"/>
@@ -673,6 +678,53 @@ function NewBanner({list}){
     </div>}
   </section>;
 }
+
+const INSTALL_DISMISS_KEY="jw_install_hint_dismissed";
+function isStandaloneApp(){
+  return (window.matchMedia&&window.matchMedia("(display-mode: standalone)").matches)||window.navigator.standalone===true;
+}
+function isIosDevice(){
+  const ua=navigator.userAgent||"";
+  return /iPad|iPhone|iPod/.test(ua)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
+}
+function InstallHint(){
+  const [deferred,setDeferred]=useState(null);
+  const [show,setShow]=useState(false);
+  const [kind,setKind]=useState(null); // "android" | "ios"
+  useEffect(()=>{
+    if(isStandaloneApp()) return;
+    try{ if(localStorage.getItem(INSTALL_DISMISS_KEY)==="1") return; }catch(e){}
+    const onBip=e=>{
+      e.preventDefault();
+      setDeferred(e);
+      setKind("android");
+      setShow(true);
+    };
+    window.addEventListener("beforeinstallprompt",onBip);
+    if(isIosDevice()){ setKind(k=>k||"ios"); setShow(true); }
+    return ()=>window.removeEventListener("beforeinstallprompt",onBip);
+  },[]);
+  if(!show||!kind) return null;
+  const dismiss=()=>{ setShow(false); try{ localStorage.setItem(INSTALL_DISMISS_KEY,"1"); }catch(e){} };
+  const install=async()=>{
+    if(!deferred) return;
+    deferred.prompt();
+    try{ await deferred.userChoice; }catch(e){}
+    setDeferred(null); setShow(false);
+    try{ localStorage.setItem(INSTALL_DISMISS_KEY,"1"); }catch(e){}
+  };
+  return(
+    <div id="installHint" className="jw-install" role="region" aria-label="安裝 App">
+      <div className="jw-install__body">
+        {kind==="android"
+          ?<><span>把江味齋加到主畫面，下次更快點餐</span><button type="button" className="jw-btn jw-btn--primary jw-install__btn" onClick={install}>安裝 App</button></>
+          :<span>點分享 → 加入主畫面 · Tap Share → Add to Home Screen</span>}
+      </div>
+      <button type="button" className="jw-install__x" onClick={dismiss} aria-label="關閉 Close">✕</button>
+    </div>
+  );
+}
+
 function App(){
   const [mode,setMode]=useState("customer");
   const [adminTab,setAdminTab]=useState("stock");
@@ -1721,6 +1773,7 @@ function App(){
     <div>
       {TopBar({gear:true,showStep:true,extra:step===2&&<nav className="jw-tabs" aria-label="菜單分類">{effectiveMenu.map((cat,ci)=><a key={cat.cat} href={`#jw-sec-${ci}`} data-sec={ci} className={"jw-tab"+(ci===activeSec?" jw-tab--active":"")} aria-current={ci===activeSec?"true":undefined} onClick={e=>{e.preventDefault();const s=document.getElementById(`jw-sec-${ci}`);if(s)s.scrollIntoView({behavior:window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth"});}}>{CAT_SHORT(cat.cat)}</a>)}</nav>})}
       {promoBar}
+      <InstallHint/>
 
         {step!==5&&pendingList.map(pb=>{
           const good=pb.status==="ok", busy=pb.status==="saving";
