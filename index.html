@@ -65,7 +65,7 @@ try {
 }
 </script>
 <script type="text/babel">
-const {useState,useRef,useCallback,useEffect}=React;
+const {useState,useRef,useCallback,useEffect,useLayoutEffect}=React;
 const ICONS={"plus": "<path d=\"M5 12h14\"/><path d=\"M12 5v14\"/>", "minus": "<path d=\"M5 12h14\"/>", "bag": "<path d=\"M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z\"/><path d=\"M3 6h18\"/><path d=\"M16 10a4 4 0 0 1-8 0\"/>", "msg": "<path d=\"M7.9 20A9 9 0 1 0 4 16.1L2 22Z\"/>", "left": "<path d=\"m15 18-6-6 6-6\"/>", "right": "<path d=\"m9 18 6-6-6-6\"/>", "clock": "<circle cx=\"12\" cy=\"12\" r=\"10\"/><polyline points=\"12 6 12 12 16 14\"/>", "moon": "<path d=\"M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z\"/>", "user": "<path d=\"M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2\"/><circle cx=\"12\" cy=\"7\" r=\"4\"/>", "phone": "<path d=\"M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z\"/>", "alert": "<circle cx=\"12\" cy=\"12\" r=\"10\"/><line x1=\"12\" x2=\"12\" y1=\"8\" y2=\"12\"/><line x1=\"12\" x2=\"12.01\" y1=\"16\" y2=\"16\"/>", "tri": "<path d=\"m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3\"/><path d=\"M12 9v4\"/><path d=\"M12 17h.01\"/>", "check": "<path d=\"M20 6 9 17l-5-5\"/>", "copy": "<rect width=\"14\" height=\"14\" x=\"8\" y=\"8\" rx=\"2\" ry=\"2\"/><path d=\"M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2\"/>", "bank": "<line x1=\"3\" x2=\"21\" y1=\"22\" y2=\"22\"/><line x1=\"6\" x2=\"6\" y1=\"18\" y2=\"11\"/><line x1=\"10\" x2=\"10\" y1=\"18\" y2=\"11\"/><line x1=\"14\" x2=\"14\" y1=\"18\" y2=\"11\"/><line x1=\"18\" x2=\"18\" y1=\"18\" y2=\"11\"/><polygon points=\"12 2 20 7 4 7\"/>", "cash": "<rect width=\"20\" height=\"12\" x=\"2\" y=\"6\" rx=\"2\"/><circle cx=\"12\" cy=\"12\" r=\"2\"/><path d=\"M6 12h.01M18 12h.01\"/>", "ticket": "<path d=\"M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z\"/><path d=\"M13 5v2\"/><path d=\"M13 17v2\"/><path d=\"M13 11v2\"/>", "truck": "<path d=\"M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2\"/><path d=\"M15 18H9\"/><path d=\"M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14\"/><circle cx=\"17\" cy=\"18\" r=\"2\"/><circle cx=\"7\" cy=\"18\" r=\"2\"/>", "utensils": "<path d=\"M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2\"/><path d=\"M7 2v20\"/><path d=\"M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 3 2h3Zm0 0v7\"/>", "drumstick": "<path d=\"M15.4 15.63a7.875 6 135 1 1 6.23-6.23 4.5 3.43 135 0 0-6.23 6.23\"/><path d=\"m8.29 12.71-2.6 2.6a2.5 2.5 0 1 0-1.65 4.65A2.5 2.5 0 1 0 8.7 18.3l2.59-2.59\"/>", "soup": "<path d=\"M12 21a9 9 0 0 0 9-9H3a9 9 0 0 0 9 9Z\"/><path d=\"M7 21h10\"/><path d=\"M19.5 12 22 6\"/><path d=\"M16.25 3c.27.1.8.53.75 1.36-.06.83-.93 1.2-1 2.02-.05.78.34 1.24.73 1.62\"/><path d=\"M11.25 3c.27.1.8.53.74 1.36-.05.83-.93 1.2-.98 2.02-.06.78.33 1.24.72 1.62\"/><path d=\"M6.25 3c.27.1.8.53.75 1.36-.06.83-.93 1.2-1 2.02-.05.78.34 1.24.74 1.62\"/>", "cup": "<path d=\"m6 8 1.75 12.28a2 2 0 0 0 2 1.72h4.54a2 2 0 0 0 2-1.72L18 8\"/><path d=\"M5 8h14\"/><path d=\"M7 15a6.47 6.47 0 0 1 5 0 6.47 6.47 0 0 0 5 0\"/><path d=\"m12 8 1-6h2\"/>", "snow": "<line x1=\"2\" x2=\"22\" y1=\"12\" y2=\"12\"/><line x1=\"12\" x2=\"12\" y1=\"2\" y2=\"22\"/><path d=\"m20 16-4-4 4-4\"/><path d=\"m4 8 4 4-4 4\"/><path d=\"m16 4-4 4-4-4\"/><path d=\"m8 20 4-4 4 4\"/>", "lock": "<rect width=\"18\" height=\"11\" x=\"3\" y=\"11\" rx=\"2\" ry=\"2\"/><path d=\"M7 11V7a5 5 0 0 1 10 0v4\"/>", "mail": "<rect width=\"20\" height=\"16\" x=\"2\" y=\"4\" rx=\"2\"/><path d=\"m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7\"/>", "out": "<path d=\"M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4\"/><polyline points=\"16 17 21 12 16 7\"/><line x1=\"21\" x2=\"9\" y1=\"12\" y2=\"12\"/>", "settings": "<path d=\"M20 7h-9\"/><path d=\"M14 17H5\"/><circle cx=\"17\" cy=\"17\" r=\"3\"/><circle cx=\"7\" cy=\"7\" r=\"3\"/>"};
 // img：assets/img/ 內的照片檔名；imgSrc：real＝店家實拍、ai＝AI 示意圖（上線前要換成實拍）。沒有 img 的品項顯示霓虹線框佔位圖
 const MENU=[
@@ -117,6 +117,25 @@ const RETIRED_ITEMS=[
   {id:"f1",name:"芋粿巧（4個）",nameEn:"Taro Cake (4pcs)",price:90},
 ];
 const ALL=MENU.flatMap(c=>c.items);
+// 後台新增的商品：上架後在「⭐ 新品」區與輪播停留 NEW_ITEM_DAYS 天，之後自動移入上架時選的類別（純前端依 createdAt 計算）
+const NEW_ITEM_DAYS=30;
+const CAT_NAMES=MENU.map(c=>c.cat);
+const customMoveAt=c=>(c.category&&CAT_NAMES.includes(c.category)&&Number(c.createdAt))?Number(c.createdAt)+NEW_ITEM_DAYS*864e5:0;
+const customMoved=c=>{const t=customMoveAt(c);return t>0&&Date.now()>=t;};
+// 文字放不下時先縮小字級（最小 min px），還放不下才允許換行，不會被切掉
+function Fit({as:T="div",className,style,min=11,children}){
+  const r=useRef(null);
+  useLayoutEffect(()=>{const el=r.current;if(!el)return;
+    const fit=()=>{el.style.fontSize="";el.style.whiteSpace="nowrap";let fs=parseFloat(getComputedStyle(el).fontSize);
+      while(el.scrollWidth>el.clientWidth+1&&fs>min){fs-=0.5;el.style.fontSize=fs+"px";}
+      if(el.scrollWidth>el.clientWidth+1)el.style.whiteSpace="normal";};
+    fit();if(document.fonts&&document.fonts.ready)document.fonts.ready.then(fit);
+    const ro=typeof ResizeObserver==="function"&&el.parentNode?new ResizeObserver(fit):null;if(ro)ro.observe(el.parentNode);
+    return ()=>{if(ro)ro.disconnect();};
+  },[el2txt(children)]);
+  return <T ref={r} className={className} style={style}>{children}</T>;
+}
+const el2txt=c=>c==null||typeof c==="boolean"?"":Array.isArray(c)?c.map(el2txt).join(""):typeof c==="object"?el2txt(c.props&&c.props.children):String(c);
 // 滷肉飯固定 R75，忽略 Firebase 的覆蓋價格
 const LOCKED_PRICES={a6:75};
 const getPrice=(i,ovr)=>LOCKED_PRICES[i.id]!==undefined?LOCKED_PRICES[i.id]:(ovr&&ovr.price!==undefined?ovr.price:i.price);
@@ -637,7 +656,7 @@ function NewBanner({list}){
       {list.map((x,k)=><div className="jw-slide" key={x.id} role="group" aria-roledescription="slide" aria-label={`第 ${k+1} 張，共 ${n} 張`} aria-hidden={n>1&&k!==i?"true":undefined}>
         {x.img&&<img src={`assets/img/${x.img}.webp`} alt="" loading={k?"lazy":undefined}/>}
         {x.img&&<span className="jw-slide__src">{x.imgSrc==="ai"?"AI 示意":"實拍"}</span>}
-        <div className="jw-slide__txt"><span className="jw-slide__tag">新品推出</span><div className="jw-slide__h">{x.name}<b>R{x.price}</b></div>{x.nameEn&&<p className="jw-slide__p">{x.nameEn}</p>}</div>
+        <div className="jw-slide__txt"><span className="jw-slide__tag">新品推出</span><Fit className="jw-slide__h" min={12}>{x.name}<b>R{x.price}</b></Fit>{x.nameEn&&<Fit as="p" className="jw-slide__p" min={10}>{x.nameEn}</Fit>}</div>
       </div>)}
     </div>
     {n>1&&<div className="jw-banner__ctl">
@@ -888,6 +907,7 @@ function App(){
     return ()=>setRef.off("value",unsubscribe);
   },[]);
 
+  const toCustom=c=>({id:c.id,name:c.name,nameEn:c.nameEn,price:c.price,_custom:true,_fbKey:c._fbKey,_hidden:!!c.hidden,_moved:customMoved(c)});
   // 計算有效的菜單（套用價格修改 + 自訂商品）
   const effectiveAll=[
     ...ALL.map(i=>{
@@ -898,30 +918,36 @@ function App(){
           price:getPrice(i,ovr),
           name:ovr.name||i.name,
           nameEn:ovr.nameEn||i.nameEn,
+          _hidden:!!ovr.hidden,
         };
       }
       return {...i,price:getPrice(i,null)};
     }),
-    ...customItems.map(c=>({id:c.id,name:c.name,nameEn:c.nameEn,price:c.price,_custom:true,_fbKey:c._fbKey})),
+    ...customItems.map(toCustom),
   ];
+  // 已刪除（hidden）的品項：客人看不到、不能點；但 effectiveAll 仍保留，舊訂單核對金額時認得
+  const visibleAll=effectiveAll.filter(i=>!i._hidden);
   const effectiveMenu=[
     ...MENU.map(cat=>({
       ...cat,
-      items:cat.items.map(i=>{
+      items:[...cat.items.filter(i=>!(menuOverrides[i.id]&&menuOverrides[i.id].hidden)).map(i=>{
         const ovr=menuOverrides[i.id];
         if(ovr){
           return {...i,price:getPrice(i,ovr),name:ovr.name||i.name,nameEn:ovr.nameEn||i.nameEn};
         }
         return {...i,price:getPrice(i,null)};
-      })
+      }),...customItems.filter(c=>!c.hidden&&customMoved(c)&&c.category===cat.cat).map(toCustom)]
     })),
-    ...(customItems.length>0?[{cat:"⭐ 新品 NEW ITEMS",items:customItems.map(c=>({id:c.id,name:c.name,nameEn:c.nameEn,price:c.price,_custom:true,_fbKey:c._fbKey}))}]:[])
-  ];
+    {cat:"⭐ 新品 NEW ITEMS",items:customItems.filter(c=>!c.hidden&&!customMoved(c)).map(toCustom)}
+  ].filter(cat=>cat.items.length>0);
 
+  // 品項被後台刪除：從購物車（含 localStorage 草稿）拿掉
+  const hiddenKey=effectiveAll.filter(i=>i._hidden).map(i=>i.id).join(",");
+  useEffect(()=>{if(!hiddenKey)return;const h=hiddenKey.split(",");setCart(c=>h.some(id=>c[id])?Object.fromEntries(Object.entries(c).filter(([id])=>!h.includes(id))):c);},[hiddenKey]);
   const qty=id=>cart[id]||0;
   // 新品 = 店家後台「新增商品」上架的自訂商品，加上菜單資料裡標了 isNew:true 的品項；售完（或被標售完）就不輪播
-  const newBannerList=effectiveAll.filter(i=>(i._custom||i.isNew)&&!soldOut[i.id]);
-  const cartItems=effectiveAll.filter(i=>qty(i.id)>0&&!soldOut[i.id]); // 售完的品項不計入訂單
+  const newBannerList=visibleAll.filter(i=>(i._custom?!i._moved:i.isNew)&&!soldOut[i.id]);
+  const cartItems=visibleAll.filter(i=>qty(i.id)>0&&!soldOut[i.id]); // 售完的品項不計入訂單
   const sub=cartItems.reduce((s,i)=>s+i.price*qty(i.id),0);
   const {disc,discLines,addonList}=calcPromo(cartItems,qty,promos);
   const addonTotal=addonList.reduce((s,p)=>s+(p.addonPrice*(addonQty[p.id]||0)),0);
@@ -1303,7 +1329,7 @@ function App(){
             </select>
             <Lbl t="名稱 Label"/><input value={pForm.label} onChange={e=>setPForm(f=>({...f,label:e.target.value}))} placeholder="例：母親節特惠" style={{...IS,fontSize:14}}/>
             {pForm.type!=="addon"&&<><Lbl t="折扣 %"/><input type="number" value={pForm.pct} onChange={e=>setPForm(f=>({...f,pct:e.target.value}))} placeholder="例：10" style={{...IS,fontSize:14}}/></>}
-            {pForm.type==="item_discount"&&<><Lbl t="選擇品項"/><select value={pForm.itemId} onChange={e=>setPForm(f=>({...f,itemId:e.target.value}))} style={{...IS,fontSize:14}}><option value="">請選擇...</option>{effectiveAll.map(i=><option key={i.id} value={i.id}>{i.name} — R{i.price}</option>)}</select></>}
+            {pForm.type==="item_discount"&&<><Lbl t="選擇品項"/><select value={pForm.itemId} onChange={e=>setPForm(f=>({...f,itemId:e.target.value}))} style={{...IS,fontSize:14}}><option value="">請選擇...</option>{visibleAll.map(i=><option key={i.id} value={i.id}>{i.name} — R{i.price}</option>)}</select></>}
             {pForm.type==="addon"&&<><Lbl t="品項名稱"/><input value={pForm.addonName} onChange={e=>setPForm(f=>({...f,addonName:e.target.value}))} placeholder="例：特製醬料包" style={{...IS,fontSize:14}}/><Lbl t="加價金額 (R)"/><input type="number" value={pForm.addonPrice} onChange={e=>setPForm(f=>({...f,addonPrice:e.target.value}))} placeholder="例：15" style={{...IS,fontSize:14}}/></>}
             <button onClick={addPromo} style={{width:"100%",background:RED,color:"var(--jw-accent-ink)",border:"none",borderRadius:8,padding:"12px",fontSize:14,fontWeight:500,cursor:"pointer",marginTop:16}}>＋ 新增</button>
           </div>
@@ -1330,9 +1356,9 @@ function App(){
                       if(isNaN(newPrice)||newPrice<=0){alert("⚠️ 請輸入有效價格");return;}
                       if(newPrice===item.price){
                         // 價格跟原始一樣，移除覆蓋
-                        if(window.fbDb)window.fbDb.ref(`menu_overrides/${item.id}`).remove().catch(fbErr("還原價格"));
+                        if(window.fbDb)window.fbDb.ref(`menu_overrides/${item.id}/price`).remove().catch(fbErr("還原價格"));
                       }else{
-                        if(window.fbDb)window.fbDb.ref(`menu_overrides/${item.id}`).set({price:newPrice}).then(()=>{
+                        if(window.fbDb)window.fbDb.ref(`menu_overrides/${item.id}`).update({price:newPrice}).then(()=>{
                           console.log("✅ 已更新價格", item.id, newPrice);
                         }).catch(fbErr("更新價格"));
                       }
@@ -1348,6 +1374,7 @@ function App(){
           <input id="newItemNameZh" placeholder="中文名稱（例：水餃 30顆）" style={{...IS,fontSize:14}}/>
           <input id="newItemNameEn" placeholder="English Name (e.g. Dumplings 30pcs)" style={{...IS,fontSize:14,marginTop:8}}/>
           <input id="newItemPrice" type="number" placeholder="價格 Price (R)" style={{...IS,fontSize:14,marginTop:8}}/>
+          <select id="newItemCat" aria-label="類別 Category" defaultValue="" style={{...IS,fontSize:14,marginTop:8}}><option value="">類別 Category（{NEW_ITEM_DAYS} 天後移入）…</option>{CAT_NAMES.map(n=><option key={n} value={n}>{n}</option>)}</select>
           <button onClick={()=>{
             const nameZh=document.getElementById("newItemNameZh").value.trim();
             const nameEn=document.getElementById("newItemNameEn").value.trim();
@@ -1355,37 +1382,63 @@ function App(){
             if(!nameZh){alert("⚠️ 請輸入中文名稱");return;}
             if(!nameEn){alert("⚠️ 請輸入英文名稱");return;}
             if(isNaN(price)||price<=0){alert("⚠️ 請輸入有效價格");return;}
-            const newId="custom_"+Date.now();
-            const newItem={id:newId,name:nameZh,nameEn:nameEn,price:price};
+            const category=document.getElementById("newItemCat").value;
+            if(!category){alert("⚠️ 請選擇類別");return;}
+            const now=Date.now(),newId="custom_"+now;
+            const newItem={id:newId,name:nameZh,nameEn:nameEn,price:price,category,createdAt:now};
             if(window.fbDb){
               window.fbDb.ref(`custom_items/${newId}`).set(newItem).then(()=>{
                 alert("✅ 新商品已上架！");
                 document.getElementById("newItemNameZh").value="";
                 document.getElementById("newItemNameEn").value="";
                 document.getElementById("newItemPrice").value="";
+                document.getElementById("newItemCat").value="";
               }).catch(fbErr("新增商品"));
             }
           }} style={{width:"100%",background:RED,color:"var(--jw-accent-ink)",border:"none",borderRadius:8,padding:"12px",fontSize:14,cursor:"pointer",marginTop:14}}>＋ 新增商品</button>
           
-          {/* 顯示已上架的自訂商品 */}
-          {customItems.length>0&&<div style={{marginTop:20,borderTop:`1px solid ${BORDER}`,paddingTop:14}}>
-            <div style={{fontSize:13,fontWeight:500,color:NAVY,marginBottom:10}}>已上架商品</div>
-            {customItems.map(c=>(
-              <div key={c.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,padding:"8px 10px",background:"var(--jw-bg-raised)",borderRadius:6,border:`1px solid ${BORDER}`}}>
-                <div style={{flex:1}}>
-                  <div style={{fontSize:13,fontWeight:500}}>{c.name}</div>
+          {/* 已上架商品：全部品項都可刪除（內建品項＝menu_overrides/<id>/hidden，自訂品項＝custom_items/<id>/hidden），刪錯可恢復 */}
+          <div style={{marginTop:20,borderTop:`1px solid ${BORDER}`,paddingTop:14}}>
+            <div style={{fontSize:13,fontWeight:500,color:NAVY,marginBottom:10}}>已上架商品 Listed Items</div>
+            {customItems.filter(c=>!c.hidden).map(c=>{
+              const at=customMoveAt(c),catOk=c.category&&CAT_NAMES.includes(c.category);
+              const st=!c.category?"未設類別，留在新品區":!catOk?"類別已不存在，留在新品區":!at?"留在新品區":Date.now()>=at?"已移入正常菜單":`${Math.ceil((at-Date.now())/864e5)} 天後移入『${CAT_SHORT(c.category)}』`;
+              return(
+              <div key={c.id} className="jwAdmItem" data-id={c.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,padding:"8px 10px",background:"var(--jw-bg-raised)",borderRadius:6,border:`1px solid ${BORDER}`}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:13,fontWeight:500}}>⭐ {c.name}</div>
                   <div style={{fontSize:11,color:"var(--jw-text-muted)"}}>{c.nameEn} · R{c.price}</div>
+                  <select aria-label={`${c.name} 類別 Category`} value={catOk?c.category:""} onChange={e=>{const v=e.target.value;if(!v||!window.fbDb||!c._fbKey)return;
+                    const m=/^custom_(\d+)$/.exec(c.id||""),u={category:v};if(!Number(c.createdAt)&&m)u.createdAt=Number(m[1]);
+                    window.fbDb.ref(`custom_items/${c._fbKey}`).update(u).catch(fbErr("設定類別"));}} style={{marginTop:4,maxWidth:"100%",padding:"3px 4px",borderRadius:4,border:`1px solid ${BORDER}`,fontSize:11}}>
+                    <option value="">類別 Category…</option>{CAT_NAMES.map(n=><option key={n} value={n}>{CAT_SHORT(n)}</option>)}</select>
+                  <div className="jwMoveSt" style={{fontSize:11,color:"var(--jw-amber-main)",marginTop:2}}>{st}</div>
                 </div>
-                <button onClick={()=>{
-                  if(confirm(`確定刪除「${c.name}」？`)){
-                    if(window.fbDb&&c._fbKey){
-                      window.fbDb.ref(`custom_items/${c._fbKey}`).remove().catch(fbErr("刪除商品"));
-                    }
-                  }
+                <button aria-label={`刪除 ${c.name}`} onClick={()=>{
+                  if(confirm(`確定刪除「${c.name}」？`)&&window.fbDb&&c._fbKey)window.fbDb.ref(`custom_items/${c._fbKey}/hidden`).set(true).catch(fbErr("刪除商品"));
                 }} style={{padding:"4px 8px",borderRadius:6,border:`1px solid ${RED}`,background:"var(--jw-bg-card)",color:RED,fontSize:11,cursor:"pointer"}}>✕</button>
-              </div>
-            ))}
-          </div>}
+              </div>);})}
+            {MENU.map(cat=>{const its=cat.items.filter(i=>!(menuOverrides[i.id]&&menuOverrides[i.id].hidden));return its.length>0&&<div key={cat.cat}>
+              <div style={{fontSize:11,color:NAVY,margin:"8px 0 4px",fontWeight:500}}>{cat.cat}</div>
+              {its.map(item=><div key={item.id} className="jwAdmItem" data-id={item.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:4,padding:"6px 10px",background:"var(--jw-bg-raised)",borderRadius:6}}>
+                <span style={{flex:1,fontSize:12}}>{item.name} <span style={{color:"var(--jw-text-muted)"}}>R{getPrice(item,menuOverrides[item.id])}</span></span>
+                <button aria-label={`刪除 ${item.name}`} onClick={()=>{
+                  if(confirm(`確定刪除「${item.name}」？客人將看不到此品項（可在「已刪除品項」恢復）`)&&window.fbDb)window.fbDb.ref(`menu_overrides/${item.id}/hidden`).set(true).catch(fbErr("刪除商品"));
+                }} style={{padding:"4px 8px",borderRadius:6,border:`1px solid ${RED}`,background:"var(--jw-bg-card)",color:RED,fontSize:11,cursor:"pointer"}}>✕</button>
+              </div>)}
+            </div>;})}
+          </div>
+          {/* 已刪除品項：可恢復；自訂品項可永久刪除 */}
+          {(()=>{const del=[...ALL.filter(i=>menuOverrides[i.id]&&menuOverrides[i.id].hidden).map(i=>({id:i.id,name:i.name,path:`menu_overrides/${i.id}/hidden`})),
+            ...customItems.filter(c=>c.hidden).map(c=>({id:c.id,name:"⭐ "+c.name,path:`custom_items/${c._fbKey}/hidden`,fbKey:c._fbKey}))];
+            return del.length>0&&<div id="jwDeleted" style={{marginTop:20,borderTop:`1px solid ${BORDER}`,paddingTop:14}}>
+              <div style={{fontSize:13,fontWeight:500,color:NAVY,marginBottom:10}}>已刪除品項 Deleted Items</div>
+              {del.map(d=><div key={d.id} className="jwDelItem" data-id={d.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:4,padding:"6px 10px",background:"var(--jw-bg-raised)",borderRadius:6,opacity:.85}}>
+                <span style={{flex:1,fontSize:12,textDecoration:"line-through"}}>{d.name}</span>
+                <button aria-label={`恢復 ${d.name}`} onClick={()=>{if(window.fbDb)window.fbDb.ref(d.path).remove().catch(fbErr("恢復商品"));}} style={{padding:"4px 8px",borderRadius:6,border:`1px solid ${BORDER}`,background:"var(--jw-bg-card)",color:DARK,fontSize:11,cursor:"pointer"}}>恢復 Restore</button>
+                {d.fbKey&&<button aria-label={`永久刪除 ${d.name}`} onClick={()=>{if(confirm(`永久刪除「${d.name}」？無法恢復`)&&window.fbDb)window.fbDb.ref(`custom_items/${d.fbKey}`).remove().catch(fbErr("刪除商品"));}} style={{padding:"4px 8px",borderRadius:6,border:`1px solid ${RED}`,background:"var(--jw-bg-card)",color:RED,fontSize:11,cursor:"pointer"}}>永久刪除</button>}
+              </div>)}
+            </div>;})()}
         </div>}
         {adminTab==="settings"&&<div style={{background:"var(--jw-bg-card)",border:`1.5px solid ${BORDER}`,borderRadius:12,padding:"16px"}}>
           <Lbl t="最低消費 (R) — 0=不設限"/><input id="setMinOrder" aria-label="最低消費 (R) Minimum order" type="number" min="0" key={"min"+minOrder} defaultValue={minOrder} onChange={e=>{minRef.current=e.target.value;setSetErrMsg("");}} style={{...IS,fontSize:14}}/>
@@ -1577,8 +1630,8 @@ function App(){
                     <article key={item.id} className={"jw-card"+(out?" jw-card--soldout":q?" jw-card--selected":"")}>
                       <div className="jw-card__pic"><Pic item={item} ci={ci}/></div>
                       <div className="jw-card__body">
-                        <h4 className="jw-card__name" style={{textDecoration:out?"line-through":"none"}}>{item.name}{ip&&!out&&<> <span className="jw-badge jw-badge--sample">-{ip.pct}% OFF</span></>}</h4>
-                        <p className="jw-card__en">{item.nameEn}</p>
+                        <Fit as="h4" className="jw-card__name" min={12} style={{textDecoration:out?"line-through":"none"}}>{item.name}{ip&&!out&&<> <span className="jw-badge jw-badge--sample">-{ip.pct}% OFF</span></>}</Fit>
+                        <Fit as="p" className="jw-card__en" min={11}>{item.nameEn}</Fit>
                         {out&&q>0&&<div className="soldout-in-cart" style={{fontSize:12,color:"var(--jw-error-main)",marginTop:2}}>已售完，不會計入訂單 Sold out — not included</div>}
                         <div className="jw-card__row">
                           <span className="jw-card__price">{dp?<><s style={{color:"var(--jw-text-faint)",fontWeight:400,fontSize:13}}>R{item.price}</s> R{dp}</>:<>R{item.price}</>}</span>

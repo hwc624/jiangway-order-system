@@ -67,3 +67,5 @@
 .jw-slide:not(:has(img)){background:linear-gradient(90deg,var(--jw-bg-tile),var(--jw-bg-raised))}
 .jw-slide:not(:has(img))::after{display:none}
 .jw-slide__txt{max-width:66%}
+/* 沒有照片的新品：文字可用滿寬度，長名稱不必縮太小（Fit 會再自動縮字） */
+.jw-slide:not(:has(img)) .jw-slide__txt{max-width:94%}
