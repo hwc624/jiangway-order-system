@@ -117,6 +117,7 @@ const RETIRED_ITEMS=[
   {id:"f1",name:"芋粿巧（4個）",nameEn:"Taro Cake (4pcs)",price:90},
 ];
 const ALL=MENU.flatMap(c=>c.items);
+const BUILTIN_CAT_OF=Object.fromEntries(MENU.flatMap(c=>c.items.map(i=>[i.id,c.cat])));
 // 後台新增的商品：上架後在「⭐ 新品」區與輪播停留 NEW_ITEM_DAYS 天，之後自動移入上架時選的類別（純前端依 createdAt 計算）
 const NEW_ITEM_DAYS=30;
 const BUILTIN_CATS=MENU.map(c=>c.cat);
@@ -124,7 +125,7 @@ const BUILTIN_CATS=MENU.map(c=>c.cat);
 const customMoveAt=(c,activeKeys)=>(c.category&&(activeKeys||BUILTIN_CATS).includes(c.category)&&Number(c.createdAt))?Number(c.createdAt)+NEW_ITEM_DAYS*864e5:0;
 const customMoved=(c,activeKeys)=>{const t=customMoveAt(c,activeKeys);return t>0&&Date.now()>=t;};
 const catLabel=c=>{const zh=(c.nameZh||"").trim(),en=(c.nameEn||"").trim();return en?zh+" "+en:zh;};
-const normCatName=s=>String(s||"").trim().replace(/\s+/g," ").toLowerCase();
+const normCatName=s=>String(s||"").normalize("NFKC").trim().replace(/\s+/g," ").toLowerCase();
 // 文字放不下時先縮小字級（最小 min px），還放不下才允許換行，不會被切掉
 function Fit({as:T="div",className,style,min=11,children}){
   const r=useRef(null);
@@ -169,8 +170,11 @@ function authErrMsg(err){
 function fbErr(action){
   return err=>{
     console.error("❌ "+action+"失敗:", err&&err.message);
-    const perm=/permission/i.test((err&&(err.code||err.message))||"");
-    alert("❌ "+action+"失敗"+(perm?"：沒有權限（請確認已用店主帳號登入）":"：")+(perm?"":((err&&err.message)||"")));
+    const raw=((err&&(err.code||""))+" "+(err&&err.message||"")).trim();
+    const perm=/permission_denied|permission/i.test(raw);
+    // RTDB 把「規則驗證失敗」也回成 permission_denied，勿一律說成沒登入
+    const tip=perm?"：寫入被拒（請確認已用店主帳號登入，且名稱長度／欄位符合規定）":"：";
+    alert("❌ "+action+"失敗"+tip+(perm?"":((err&&err.message)||raw||"")));
   };
 }
 
@@ -938,7 +942,7 @@ function App(){
   const allCatKeys=allCats.map(c=>c.key);
   const activeCatKeys=allCats.filter(c=>!c.hidden).map(c=>c.key);
   // 已移入的品項：即使類別被隱藏仍算「已移入」（不跑回新品）；客人端因類別隱藏而看不到
-  const toCustom=c=>({id:c.id,name:c.name,nameEn:c.nameEn,price:c.price,_custom:true,_fbKey:c._fbKey,_hidden:!!c.hidden,_moved:customMoved(c,allCatKeys)});
+  const toCustom=c=>({id:c.id,name:c.name,nameEn:c.nameEn,price:c.price,category:c.category||"",_custom:true,_fbKey:c._fbKey,_hidden:!!c.hidden,_moved:customMoved(c,allCatKeys)});
   // 計算有效的菜單（套用價格修改 + 自訂商品）
   const effectiveAll=[
     ...ALL.map(i=>{
@@ -958,6 +962,13 @@ function App(){
   ];
   // 已刪除（hidden）的品項：客人看不到、不能點；但 effectiveAll 仍保留，舊訂單核對金額時認得
   const visibleAll=effectiveAll.filter(i=>!i._hidden);
+  // 類別存在且被隱藏 → 客人看不到其中品項（含未滿 30 天、category 指向該類的新品）。類別不存在／未設 → 仍留在新品區
+  const catIsHidden=key=>{if(!key)return false;const r=allCats.find(x=>x.key===key);return !!(r&&r.hidden);};
+  const inHiddenCat=i=>{
+    if(i._custom) return catIsHidden(i.category);
+    return catIsHidden(BUILTIN_CAT_OF[i.id]);
+  };
+  const guestVisible=visibleAll.filter(i=>!inHiddenCat(i));
   const mapItem=i=>{const ovr=menuOverrides[i.id];return ovr?{...i,price:getPrice(i,ovr),name:ovr.name||i.name,nameEn:ovr.nameEn||i.nameEn}:{...i,price:getPrice(i,null)};};
   const effectiveMenu=[
     ...allCats.filter(c=>!c.hidden).map(cat=>({
@@ -967,7 +978,7 @@ function App(){
         ...customItems.filter(c=>!c.hidden&&customMoved(c,allCatKeys)&&c.category===cat.key).map(toCustom)
       ]
     })),
-    {cat:"⭐ 新品 NEW ITEMS",items:customItems.filter(c=>!c.hidden&&!customMoved(c,allCatKeys)).map(toCustom)}
+    {cat:"⭐ 新品 NEW ITEMS",items:customItems.filter(c=>!c.hidden&&!customMoved(c,allCatKeys)&&!catIsHidden(c.category)).map(toCustom)}
   ].filter(cat=>cat.items.length>0);
   const countCatItems=key=>{
     const b=MENU.find(c=>c.cat===key);
@@ -976,13 +987,13 @@ function App(){
     return n;
   };
 
-  // 品項被後台刪除：從購物車（含 localStorage 草稿）拿掉
-  const hiddenKey=effectiveAll.filter(i=>i._hidden).map(i=>i.id).join(",");
-  useEffect(()=>{if(!hiddenKey)return;const h=hiddenKey.split(",");setCart(c=>h.some(id=>c[id])?Object.fromEntries(Object.entries(c).filter(([id])=>!h.includes(id))):c);},[hiddenKey]);
+  // 品項被後台刪除，或所屬類別被隱藏：從購物車（含 localStorage 草稿）拿掉
+  const blockedKey=effectiveAll.filter(i=>i._hidden||inHiddenCat(i)).map(i=>i.id).join(",");
+  useEffect(()=>{if(!blockedKey)return;const h=blockedKey.split(",");setCart(c=>h.some(id=>c[id])?Object.fromEntries(Object.entries(c).filter(([id])=>!h.includes(id))):c);},[blockedKey]);
   const qty=id=>cart[id]||0;
   // 新品 = 店家後台「新增商品」上架的自訂商品，加上菜單資料裡標了 isNew:true 的品項；售完（或被標售完）就不輪播
-  const newBannerList=visibleAll.filter(i=>(i._custom?!i._moved:i.isNew)&&!soldOut[i.id]);
-  const cartItems=visibleAll.filter(i=>qty(i.id)>0&&!soldOut[i.id]); // 售完的品項不計入訂單
+  const newBannerList=guestVisible.filter(i=>(i._custom?!i._moved:i.isNew)&&!soldOut[i.id]);
+  const cartItems=guestVisible.filter(i=>qty(i.id)>0&&!soldOut[i.id]); // 售完／隱藏類別的品項不計入訂單
   const sub=cartItems.reduce((s,i)=>s+i.price*qty(i.id),0);
   const {disc,discLines,addonList}=calcPromo(cartItems,qty,promos);
   const addonTotal=addonList.reduce((s,p)=>s+(p.addonPrice*(addonQty[p.id]||0)),0);
@@ -991,7 +1002,7 @@ function App(){
   const fee=0;
   const total=sub-disc+addonTotal+fee;
   const belowMin=minOrder>0&&sub<minOrder;
-  const activePromos=promos.filter(p=>p.active&&!(p.type==="item_discount"&&!visibleAll.some(i=>i.id===p.itemId)));
+  const activePromos=promos.filter(p=>p.active&&!(p.type==="item_discount"&&!guestVisible.some(i=>i.id===p.itemId)));
   const slots=selDate?getSlots(selDate):[];
   const dates=getDates().filter(d=>!isToday(d)||getSlots(d).length>0); // 今天已沒有可選時段就不顯示「今天」
 
@@ -1364,7 +1375,7 @@ function App(){
             </select>
             <Lbl t="名稱 Label"/><input value={pForm.label} onChange={e=>setPForm(f=>({...f,label:e.target.value}))} placeholder="例：母親節特惠" style={{...IS,fontSize:14}}/>
             {pForm.type!=="addon"&&<><Lbl t="折扣 %"/><input type="number" value={pForm.pct} onChange={e=>setPForm(f=>({...f,pct:e.target.value}))} placeholder="例：10" style={{...IS,fontSize:14}}/></>}
-            {pForm.type==="item_discount"&&<><Lbl t="選擇品項"/><select value={pForm.itemId} onChange={e=>setPForm(f=>({...f,itemId:e.target.value}))} style={{...IS,fontSize:14}}><option value="">請選擇...</option>{visibleAll.map(i=><option key={i.id} value={i.id}>{i.name} — R{i.price}</option>)}</select></>}
+            {pForm.type==="item_discount"&&<><Lbl t="選擇品項"/><select value={pForm.itemId} onChange={e=>setPForm(f=>({...f,itemId:e.target.value}))} style={{...IS,fontSize:14}}><option value="">請選擇...</option>{guestVisible.map(i=><option key={i.id} value={i.id}>{i.name} — R{i.price}</option>)}</select></>}
             {pForm.type==="addon"&&<><Lbl t="品項名稱"/><input value={pForm.addonName} onChange={e=>setPForm(f=>({...f,addonName:e.target.value}))} placeholder="例：特製醬料包" style={{...IS,fontSize:14}}/><Lbl t="加價金額 (R)"/><input type="number" value={pForm.addonPrice} onChange={e=>setPForm(f=>({...f,addonPrice:e.target.value}))} placeholder="例：15" style={{...IS,fontSize:14}}/></>}
             <button onClick={addPromo} style={{width:"100%",background:RED,color:"var(--jw-accent-ink)",border:"none",borderRadius:8,padding:"12px",fontSize:14,fontWeight:500,cursor:"pointer",marginTop:16}}>＋ 新增</button>
           </div>
@@ -1430,7 +1441,10 @@ function App(){
                   }
                 }} style={{flexShrink:0,minHeight:40,padding:"8px 12px",borderRadius:8,border:`1.5px solid ${RED}`,background:"var(--jw-bg-card)",color:RED,fontSize:13,fontWeight:500,cursor:"pointer",whiteSpace:"nowrap"}}>隱藏 Hide</button>
                 {!c.builtin&&n===0&&<button type="button" aria-label={`永久刪除類別 ${c.key}`} onClick={()=>{
-                  if(confirm(`永久刪除「${c.key}」？無法恢復`)&&window.fbDb) window.fbDb.ref(`categories/${c.id}`).remove().catch(fbErr("刪除類別"));
+                  if(!window.fbDb)return;
+                  const nNow=countCatItems(c.key);
+                  if(nNow>0){alert(`還有 ${nNow} 個品項，無法永久刪除（請先隱藏或移走品項）`);return;}
+                  if(confirm(`永久刪除「${c.key}」？無法恢復。\n刪除類別不會刪品項；若之後仍有品項指向此類別，它們會回到「新品」區。`)) window.fbDb.ref(`categories/${c.id}`).remove().catch(fbErr("刪除類別"));
                 }} style={{flexShrink:0,minHeight:40,padding:"8px 12px",borderRadius:8,border:`1.5px solid ${RED}`,background:"var(--jw-bg-card)",color:RED,fontSize:13,cursor:"pointer",whiteSpace:"nowrap"}}>永久刪除</button>}
               </div>);})}
             {(()=>{const hid=allCats.filter(c=>c.hidden);return hid.length>0&&<div id="jwCatDeleted" style={{marginTop:12}}>
@@ -1453,7 +1467,10 @@ function App(){
                     }
                   }} style={{flexShrink:0,minHeight:40,padding:"8px 12px",borderRadius:8,border:`1.5px solid ${BORDER}`,background:"var(--jw-bg-card)",color:DARK,fontSize:13,cursor:"pointer",whiteSpace:"nowrap"}}>恢復 Restore</button>
                   {!c.builtin&&n===0&&<button type="button" aria-label={`永久刪除類別 ${c.key}`} onClick={()=>{
-                    if(confirm(`永久刪除「${c.key}」？無法恢復`)&&window.fbDb) window.fbDb.ref(`categories/${c.id}`).remove().catch(fbErr("刪除類別"));
+                    if(!window.fbDb)return;
+                  const nNow=countCatItems(c.key);
+                  if(nNow>0){alert(`還有 ${nNow} 個品項，無法永久刪除（請先隱藏或移走品項）`);return;}
+                  if(confirm(`永久刪除「${c.key}」？無法恢復。\n刪除類別不會刪品項；若之後仍有品項指向此類別，它們會回到「新品」區。`)) window.fbDb.ref(`categories/${c.id}`).remove().catch(fbErr("刪除類別"));
                   }} style={{flexShrink:0,minHeight:40,padding:"8px 12px",borderRadius:8,border:`1.5px solid ${RED}`,background:"var(--jw-bg-card)",color:RED,fontSize:13,cursor:"pointer",whiteSpace:"nowrap"}}>永久刪除</button>}
                 </div>);})}
             </div>;})()}
@@ -1465,7 +1482,10 @@ function App(){
                 const zh=(document.getElementById("newCatZh").value||"").trim().replace(/\s+/g," ");
                 const en=(document.getElementById("newCatEn").value||"").trim().replace(/\s+/g," ");
                 if(!zh){alert("⚠️ 請輸入中文名稱");return;}
+                if(zh.length>60){alert("⚠️ 中文名稱最多 60 字");return;}
+                if(en.length>60){alert("⚠️ 英文名稱最多 60 字");return;}
                 const key=catLabel({nameZh:zh,nameEn:en});
+                if(key.length>120){alert("⚠️ 類別名稱過長（中文＋英文合計最多 120 字）");return;}
                 const dup=allCats.some(c=>{
                   if(normCatName(c.key)===normCatName(key)) return true;
                   if(normCatName(c.nameZh||"")===normCatName(zh)) return true;
@@ -1474,7 +1494,7 @@ function App(){
                   if(en&&normCatName(c.nameEn||"")===normCatName(en)) return true;
                   return false;
                 });
-                if(dup){alert("⚠️ 類別名稱重複（不分大小寫）");return;}
+                if(dup){alert("⚠️ 類別名稱重複（不分大小寫／全形半形）");return;}
                 if(!window.fbDb){alert("❌ 資料庫未連線");return;}
                 const id="cat_"+Date.now();
                 const order=allCats.reduce((m,c)=>Math.max(m,Number(c.order)||0),-1)+1;
@@ -1522,7 +1542,7 @@ function App(){
               const catRec=allCats.find(x=>x.key===c.category);
               const catOk=!!(catRec&&!catRec.hidden);
               const at=customMoveAt(c,allCatKeys);
-              const st=!c.category?"未設類別，留在新品區":!catRec?"類別已不存在，留在新品區":catRec.hidden?(Date.now()>=at&&at?"類別已隱藏（已移入，客人看不到）":"類別已隱藏，留在新品區"):!at?"留在新品區":Date.now()>=at?"已移入正常菜單":`${Math.ceil((at-Date.now())/864e5)} 天後移入『${CAT_SHORT(c.category)}』`;
+              const st=!c.category?"未設類別，留在新品區":!catRec?"類別已不存在，留在新品區":catRec.hidden?"類別已隱藏，客人看不到":!at?"留在新品區":Date.now()>=at?"已移入正常菜單":`${Math.ceil((at-Date.now())/864e5)} 天後移入『${CAT_SHORT(c.category)}』`;
               return(
               <div key={c.id} className="jwAdmItem" data-id={c.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,padding:"8px 10px",background:"var(--jw-bg-raised)",borderRadius:6,border:`1px solid ${BORDER}`}}>
                 <div style={{flex:1,minWidth:0}}>
