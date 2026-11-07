@@ -90,7 +90,11 @@
       ".read": true,
       ".write": "auth != null && (auth.token.admin === true || root.child('staff').child(auth.uid).val() === true)",
       "$itemId": {
-        "price": { ".validate": "newData.isNumber() && newData.val() > 0" }
+        "price": { ".validate": "newData.isNumber() && newData.val() > 0" },
+        "photo": {
+          ".write": "auth != null && (auth.token.admin === true || root.child('staff').child(auth.uid).val() === true)",
+          ".validate": "newData.isString() && newData.val().length <= 100000 && newData.val().matches(/^data:image\\/(webp|jpeg|png);base64,[A-Za-z0-9+\\/]+={0,2}$/)"
+        }
       }
     },
 
@@ -98,7 +102,11 @@
       ".read": true,
       ".write": "auth != null && (auth.token.admin === true || root.child('staff').child(auth.uid).val() === true)",
       "$itemId": {
-        "price": { ".validate": "newData.isNumber() && newData.val() > 0" }
+        "price": { ".validate": "newData.isNumber() && newData.val() > 0" },
+        "photo": {
+          ".write": "auth != null && (auth.token.admin === true || root.child('staff').child(auth.uid).val() === true)",
+          ".validate": "newData.isString() && newData.val().length <= 100000 && newData.val().matches(/^data:image\\/(webp|jpeg|png);base64,[A-Za-z0-9+\\/]+={0,2}$/)"
+        }
       }
     },
 

@@ -67,7 +67,9 @@ try {
 <script type="text/babel">
 const {useState,useRef,useCallback,useEffect,useLayoutEffect}=React;
 const ICONS={"plus": "<path d=\"M5 12h14\"/><path d=\"M12 5v14\"/>", "minus": "<path d=\"M5 12h14\"/>", "bag": "<path d=\"M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z\"/><path d=\"M3 6h18\"/><path d=\"M16 10a4 4 0 0 1-8 0\"/>", "msg": "<path d=\"M7.9 20A9 9 0 1 0 4 16.1L2 22Z\"/>", "left": "<path d=\"m15 18-6-6 6-6\"/>", "right": "<path d=\"m9 18 6-6-6-6\"/>", "clock": "<circle cx=\"12\" cy=\"12\" r=\"10\"/><polyline points=\"12 6 12 12 16 14\"/>", "moon": "<path d=\"M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z\"/>", "user": "<path d=\"M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2\"/><circle cx=\"12\" cy=\"7\" r=\"4\"/>", "phone": "<path d=\"M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z\"/>", "alert": "<circle cx=\"12\" cy=\"12\" r=\"10\"/><line x1=\"12\" x2=\"12\" y1=\"8\" y2=\"12\"/><line x1=\"12\" x2=\"12.01\" y1=\"16\" y2=\"16\"/>", "tri": "<path d=\"m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3\"/><path d=\"M12 9v4\"/><path d=\"M12 17h.01\"/>", "check": "<path d=\"M20 6 9 17l-5-5\"/>", "copy": "<rect width=\"14\" height=\"14\" x=\"8\" y=\"8\" rx=\"2\" ry=\"2\"/><path d=\"M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2\"/>", "bank": "<line x1=\"3\" x2=\"21\" y1=\"22\" y2=\"22\"/><line x1=\"6\" x2=\"6\" y1=\"18\" y2=\"11\"/><line x1=\"10\" x2=\"10\" y1=\"18\" y2=\"11\"/><line x1=\"14\" x2=\"14\" y1=\"18\" y2=\"11\"/><line x1=\"18\" x2=\"18\" y1=\"18\" y2=\"11\"/><polygon points=\"12 2 20 7 4 7\"/>", "cash": "<rect width=\"20\" height=\"12\" x=\"2\" y=\"6\" rx=\"2\"/><circle cx=\"12\" cy=\"12\" r=\"2\"/><path d=\"M6 12h.01M18 12h.01\"/>", "ticket": "<path d=\"M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z\"/><path d=\"M13 5v2\"/><path d=\"M13 17v2\"/><path d=\"M13 11v2\"/>", "truck": "<path d=\"M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2\"/><path d=\"M15 18H9\"/><path d=\"M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14\"/><circle cx=\"17\" cy=\"18\" r=\"2\"/><circle cx=\"7\" cy=\"18\" r=\"2\"/>", "utensils": "<path d=\"M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2\"/><path d=\"M7 2v20\"/><path d=\"M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 3 2h3Zm0 0v7\"/>", "drumstick": "<path d=\"M15.4 15.63a7.875 6 135 1 1 6.23-6.23 4.5 3.43 135 0 0-6.23 6.23\"/><path d=\"m8.29 12.71-2.6 2.6a2.5 2.5 0 1 0-1.65 4.65A2.5 2.5 0 1 0 8.7 18.3l2.59-2.59\"/>", "soup": "<path d=\"M12 21a9 9 0 0 0 9-9H3a9 9 0 0 0 9 9Z\"/><path d=\"M7 21h10\"/><path d=\"M19.5 12 22 6\"/><path d=\"M16.25 3c.27.1.8.53.75 1.36-.06.83-.93 1.2-1 2.02-.05.78.34 1.24.73 1.62\"/><path d=\"M11.25 3c.27.1.8.53.74 1.36-.05.83-.93 1.2-.98 2.02-.06.78.33 1.24.72 1.62\"/><path d=\"M6.25 3c.27.1.8.53.75 1.36-.06.83-.93 1.2-1 2.02-.05.78.34 1.24.74 1.62\"/>", "cup": "<path d=\"m6 8 1.75 12.28a2 2 0 0 0 2 1.72h4.54a2 2 0 0 0 2-1.72L18 8\"/><path d=\"M5 8h14\"/><path d=\"M7 15a6.47 6.47 0 0 1 5 0 6.47 6.47 0 0 0 5 0\"/><path d=\"m12 8 1-6h2\"/>", "snow": "<line x1=\"2\" x2=\"22\" y1=\"12\" y2=\"12\"/><line x1=\"12\" x2=\"12\" y1=\"2\" y2=\"22\"/><path d=\"m20 16-4-4 4-4\"/><path d=\"m4 8 4 4-4 4\"/><path d=\"m16 4-4 4-4-4\"/><path d=\"m8 20 4-4 4 4\"/>", "lock": "<rect width=\"18\" height=\"11\" x=\"3\" y=\"11\" rx=\"2\" ry=\"2\"/><path d=\"M7 11V7a5 5 0 0 1 10 0v4\"/>", "mail": "<rect width=\"20\" height=\"16\" x=\"2\" y=\"4\" rx=\"2\"/><path d=\"m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7\"/>", "out": "<path d=\"M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4\"/><polyline points=\"16 17 21 12 16 7\"/><line x1=\"21\" x2=\"9\" y1=\"12\" y2=\"12\"/>", "settings": "<path d=\"M20 7h-9\"/><path d=\"M14 17H5\"/><circle cx=\"17\" cy=\"17\" r=\"3\"/><circle cx=\"7\" cy=\"7\" r=\"3\"/>"};
-// img：assets/img/ 內的照片檔名；imgSrc：real＝店家實拍、ai＝AI 示意圖（上線前要換成實拍）。沒有 img 的品項顯示霓虹線框佔位圖
+// img：assets/img/ 內的照片檔名；imgSrc：real＝店家實拍、ai＝AI 示意圖（上線前要換成實拍）。
+// photo：店主上傳、存在 RTDB 的 data URL（自訂品項在 custom_items，內建品項在 menu_overrides）。
+// 顯示順序：photo → 靜態 img → 霓虹線框佔位圖
 const MENU=[
   {cat:"便當類 BENTO (含3樣小菜 / with 3 side dishes)",items:[
     {id:"b1",name:"排骨飯",nameEn:"Fry Pork Chop Bento",price:130,img:"real-b1",imgSrc:"real"},
@@ -176,6 +178,133 @@ function fbErr(action){
     const tip=perm?"：寫入被拒（請確認已用店主帳號登入，且名稱長度／欄位符合規定）":"：";
     alert("❌ "+action+"失敗"+tip+(perm?"":((err&&err.message)||raw||"")));
   };
+}
+
+// 品項照片：選圖或拍照 → 置中裁成正方形 → 邊長約 480px → WebP（canvas 不支援時改 JPEG）壓到約 60KB。
+// 存成 data URL。長度上限對齊 database.rules.json 的 photo 規則（100000 字元，含 base64 膨脹後的餘裕）。
+const PHOTO_EDGE=480, PHOTO_MAX_BYTES=60*1024, PHOTO_URL_MAX=100000;
+const PHOTO_URL_RE=/^data:image\/(webp|jpeg|png);base64,[A-Za-z0-9+/]+={0,2}$/;
+function dataUrlBytes(url){
+  const i=url.indexOf(",");
+  if(i<0) return url.length;
+  const b64=url.slice(i+1);
+  const pad=b64.endsWith("==")?2:b64.endsWith("=")?1:0;
+  return Math.floor(b64.length*3/4)-pad;
+}
+function itemPhotoSrc(item){
+  const p=item&&item.photo;
+  if(typeof p==="string"&&p.length<=PHOTO_URL_MAX&&PHOTO_URL_RE.test(p)) return p;
+  if(item&&item.img) return "assets/img/"+item.img+".webp";
+  return "";
+}
+function canvasSupportsMime(type){
+  try{
+    const c=document.createElement("canvas");
+    c.width=c.height=1;
+    return c.toDataURL(type).indexOf("data:"+type)===0;
+  }catch(e){ return false; }
+}
+function squareCanvas(img,edge,mime){
+  const sw=img.naturalWidth||img.width, sh=img.naturalHeight||img.height;
+  const side=Math.min(sw,sh);
+  const sx=(sw-side)/2, sy=(sh-side)/2;
+  const canvas=document.createElement("canvas");
+  canvas.width=canvas.height=edge;
+  const ctx=canvas.getContext("2d");
+  if(mime==="image/jpeg"){ ctx.fillStyle="#ffffff"; ctx.fillRect(0,0,edge,edge); }
+  ctx.imageSmoothingEnabled=true;
+  if("imageSmoothingQuality" in ctx) ctx.imageSmoothingQuality="high";
+  ctx.drawImage(img,sx,sy,side,side,0,0,edge,edge);
+  return canvas;
+}
+// null＝這個 mime 實際編不出來（例如舊版 iOS 的 WebP）；""＝編得出來但這個尺寸仍超過上限
+function encodeUnderCap(canvas,mime){
+  const steps=[0.86,0.74,0.62,0.5,0.38,0.28];
+  for(let i=0;i<steps.length;i++){
+    let url;
+    try{ url=canvas.toDataURL(mime,steps[i]); }
+    catch(e){ return null; }
+    if(!url||url.indexOf("data:"+mime+";base64,")!==0) return null;
+    if(dataUrlBytes(url)<=PHOTO_MAX_BYTES&&url.length<=PHOTO_URL_MAX&&PHOTO_URL_RE.test(url)) return url;
+  }
+  return "";
+}
+function loadImageFile(file){
+  return new Promise((resolve,reject)=>{
+    if(file&&file.type&&file.type.indexOf("image/")!==0){ reject(new Error("type")); return; }
+    let blobUrl="";
+    try{ blobUrl=URL.createObjectURL(file); }
+    catch(e){ reject(new Error("read")); return; }
+    const img=new Image();
+    img.onload=()=>{ URL.revokeObjectURL(blobUrl); resolve(img); };
+    img.onerror=()=>{ URL.revokeObjectURL(blobUrl); reject(new Error("decode")); };
+    img.src=blobUrl;
+  });
+}
+function compressItemPhoto(file){
+  return loadImageFile(file).then(img=>{
+    const sw=img.naturalWidth||img.width, sh=img.naturalHeight||img.height;
+    if(!sw||!sh) throw new Error("decode");
+    const webp=canvasSupportsMime("image/webp");
+    let edge=Math.min(PHOTO_EDGE,Math.min(sw,sh));
+    for(let n=0;n<5;n++){
+      const mime=webp?"image/webp":"image/jpeg";
+      let url=encodeUnderCap(squareCanvas(img,edge,mime),mime);
+      if(url===null) url=encodeUnderCap(squareCanvas(img,edge,"image/jpeg"),"image/jpeg");
+      if(url) return url;
+      const next=Math.max(160,Math.round(edge*0.75));
+      if(next===edge) break;
+      edge=next;
+    }
+    throw new Error("too-big");
+  });
+}
+function alertPhotoErr(err){
+  const m=err&&err.message;
+  if(m==="type") alert("⚠️ 請選擇圖片檔案");
+  else if(m==="too-big") alert("⚠️ 這張照片壓縮後仍超過大小限制，請換一張");
+  else alert("⚠️ 無法讀取這張照片，請換一張（需為一般圖片）");
+}
+function ItemPhotoEditor({stored,fallbackSrc,path,itemName}){
+  const [pending,setPending]=useState("");
+  const [busy,setBusy]=useState(false);
+  useEffect(()=>{ if(pending&&stored===pending) setPending(""); },[stored,pending]);
+  const shown=pending||(stored&&itemPhotoSrc({photo:stored}))||fallbackSrc||"";
+  const onFile=e=>{
+    const f=e.target.files&&e.target.files[0];
+    e.target.value="";
+    if(!f) return;
+    setBusy(true);
+    compressItemPhoto(f).then(url=>setPending(url)).catch(alertPhotoErr).finally(()=>setBusy(false));
+  };
+  const save=()=>{
+    if(!pending||!window.fbDb) return;
+    window.fbDb.ref(path).set(pending).catch(fbErr("儲存照片"));
+  };
+  const remove=()=>{
+    if(!stored||!window.fbDb) return;
+    if(!confirm("移除「"+itemName+"」的上傳照片？")) return;
+    setPending("");
+    window.fbDb.ref(path).remove().catch(fbErr("移除照片"));
+  };
+  const btn={padding:"4px 8px",borderRadius:6,border:"1px solid "+BORDER,background:"var(--jw-bg-card)",color:DARK,fontSize:11,cursor:"pointer"};
+  return (
+    <div className="jwPhotoBox" style={{display:"flex",alignItems:"flex-start",gap:8,marginTop:8}}>
+      <div style={{width:64,height:64,borderRadius:8,overflow:"hidden",flexShrink:0,border:"1px solid "+BORDER,background:"var(--jw-bg-tile)",display:"flex",alignItems:"center",justifyContent:"center"}}>
+        {shown?<img className="jwPhotoPrev" alt="" src={shown} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:10,color:"var(--jw-text-muted)",padding:4,textAlign:"center"}}>無照片</span>}
+      </div>
+      <div style={{flex:1,minWidth:0}}>
+        <input type="file" accept="image/*" aria-label={itemName+" 選擇或拍攝照片"} disabled={busy} onChange={onFile} style={{display:"block",width:"100%",fontSize:12}}/>
+        {busy&&<div style={{fontSize:11,color:"var(--jw-text-muted)",marginTop:4}}>裁切壓縮中…</div>}
+        {pending&&!busy&&<div style={{display:"flex",gap:6,marginTop:6,flexWrap:"wrap"}}>
+          <button type="button" onClick={save} style={btn}>儲存照片</button>
+          <button type="button" onClick={()=>setPending("")} style={btn}>取消</button>
+        </div>}
+        {!pending&&!!stored&&<button type="button" onClick={remove} style={{...btn,marginTop:6,border:"1px solid "+RED,color:RED}}>移除照片</button>}
+        {!pending&&!stored&&!!fallbackSrc&&<div style={{fontSize:11,color:"var(--jw-text-muted)",marginTop:4}}>目前為內建照片，選新照片可取代</div>}
+      </div>
+    </div>
+  );
 }
 
 // 解析中文時間字串為時間戳（用於排序）
@@ -660,11 +789,11 @@ function NewBanner({list}){
   return <section className="jw-banner" id="jwNewBanner" aria-roledescription="carousel" aria-label="新品推出 New arrivals"
     onMouseEnter={()=>setHold(true)} onMouseLeave={()=>setHold(false)} onTouchStart={()=>setHold(true)} onTouchEnd={()=>setHold(false)} onFocus={()=>setHold(true)} onBlur={()=>setHold(false)}>
     <div className="jw-banner__view" tabIndex={0} ref={viewRef} onScroll={onScroll}>
-      {list.map((x,k)=><div className="jw-slide" key={x.id} role="group" aria-roledescription="slide" aria-label={`第 ${k+1} 張，共 ${n} 張`} aria-hidden={n>1&&k!==i?"true":undefined}>
-        {x.img&&<img src={`assets/img/${x.img}.webp`} alt="" loading={k?"lazy":undefined}/>}
-        {x.img&&<span className="jw-slide__src">{x.imgSrc==="ai"?"AI 示意":"實拍"}</span>}
+      {list.map((x,k)=>{const src=itemPhotoSrc(x);const uploaded=!!(src&&src.indexOf("data:")===0);return <div className="jw-slide" key={x.id} role="group" aria-roledescription="slide" aria-label={`第 ${k+1} 張，共 ${n} 張`} aria-hidden={n>1&&k!==i?"true":undefined}>
+        {src&&<img src={src} alt="" loading={k?"lazy":undefined}/>}
+        {src&&!uploaded&&x.img&&<span className="jw-slide__src">{x.imgSrc==="ai"?"AI 示意":"實拍"}</span>}
         <div className="jw-slide__txt"><span className="jw-slide__tag">新品推出</span><Fit className="jw-slide__h" min={12}>{x.name}<b>R{x.price}</b></Fit>{x.nameEn&&<Fit as="p" className="jw-slide__p" min={10}>{x.nameEn}</Fit>}</div>
-      </div>)}
+      </div>;})}
     </div>
     {n>1&&<div className="jw-banner__ctl">
       {list.map((x,k)=><button key={x.id} type="button" className="jw-banner__dot" aria-label={`第 ${k+1} 張`} aria-current={k===i?"true":undefined} onClick={()=>go(k,true)}/>)}
@@ -712,6 +841,8 @@ function App(){
   const [pendingList,setPendingList]=useState([]); // 補送手機裡先前未送出的訂單：[{key,no,txt,status}]
   const curKeyRef=useRef(""); // 目前完成頁上這筆訂單的 key
   const [setErrMsg,setSetErrMsg]=useState(""); // 設定頁驗證訊息
+  const [newPhoto,setNewPhoto]=useState(""); // 上架新商品：裁切後、尚未寫入的 data URL
+  const [newPhotoBusy,setNewPhotoBusy]=useState(false);
   const [todayCounter,setTodayCounter]=useState(null);   // 後台：今天 order_counters 的值
   const [pForm,setPForm]=useState({type:"order_discount",label:"",pct:"",itemId:"",addonName:"",addonPrice:""});
   const [distance,setDistance]=useState(()=>String(D.distance||""));
@@ -942,7 +1073,7 @@ function App(){
   const allCatKeys=allCats.map(c=>c.key);
   const activeCatKeys=allCats.filter(c=>!c.hidden).map(c=>c.key);
   // 已移入的品項：即使類別被隱藏仍算「已移入」（不跑回新品）；客人端因類別隱藏而看不到
-  const toCustom=c=>({id:c.id,name:c.name,nameEn:c.nameEn,price:c.price,category:c.category||"",_custom:true,_fbKey:c._fbKey,_hidden:!!c.hidden,_moved:customMoved(c,allCatKeys)});
+  const toCustom=c=>({id:c.id,name:c.name,nameEn:c.nameEn,price:c.price,category:c.category||"",photo:typeof c.photo==="string"?c.photo:"",_custom:true,_fbKey:c._fbKey,_hidden:!!c.hidden,_moved:customMoved(c,allCatKeys)});
   // 計算有效的菜單（套用價格修改 + 自訂商品）
   const effectiveAll=[
     ...ALL.map(i=>{
@@ -954,6 +1085,7 @@ function App(){
           name:ovr.name||i.name,
           nameEn:ovr.nameEn||i.nameEn,
           _hidden:!!ovr.hidden,
+          photo:typeof ovr.photo==="string"?ovr.photo:"",
         };
       }
       return {...i,price:getPrice(i,null)};
@@ -969,7 +1101,7 @@ function App(){
     return catIsHidden(BUILTIN_CAT_OF[i.id]);
   };
   const guestVisible=visibleAll.filter(i=>!inHiddenCat(i));
-  const mapItem=i=>{const ovr=menuOverrides[i.id];return ovr?{...i,price:getPrice(i,ovr),name:ovr.name||i.name,nameEn:ovr.nameEn||i.nameEn}:{...i,price:getPrice(i,null)};};
+  const mapItem=i=>{const ovr=menuOverrides[i.id];return ovr?{...i,price:getPrice(i,ovr),name:ovr.name||i.name,nameEn:ovr.nameEn||i.nameEn,photo:typeof ovr.photo==="string"?ovr.photo:""}:{...i,price:getPrice(i,null)};};
   const effectiveMenu=[
     ...allCats.filter(c=>!c.hidden).map(cat=>({
       cat:cat.key,
@@ -1513,10 +1645,29 @@ function App(){
           <input id="newItemNameEn" placeholder="English Name (e.g. Dumplings 30pcs)" style={{...IS,fontSize:14,marginTop:8}}/>
           <input id="newItemPrice" type="number" placeholder="價格 Price (R)" style={{...IS,fontSize:14,marginTop:8}}/>
           <select id="newItemCat" aria-label="類別 Category" defaultValue="" style={{...IS,fontSize:14,marginTop:8}}><option value="">類別 Category（{NEW_ITEM_DAYS} 天後移入）…</option>{activeCatKeys.map(n=><option key={n} value={n}>{n}</option>)}</select>
-          <button onClick={()=>{
+          <Lbl t="照片 Photo（選填 Optional）"/>
+          <div id="newItemPhotoBox" className="jwPhotoBox" style={{display:"flex",alignItems:"flex-start",gap:8,marginTop:6}}>
+            <div style={{width:64,height:64,borderRadius:8,overflow:"hidden",flexShrink:0,border:`1px solid ${BORDER}`,background:"var(--jw-bg-tile)",display:"flex",alignItems:"center",justifyContent:"center"}}>
+              {newPhoto?<img id="newItemPhotoPreview" className="jwPhotoPrev" alt="" src={newPhoto} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:10,color:"var(--jw-text-muted)",padding:4,textAlign:"center"}}>無照片</span>}
+            </div>
+            <div style={{flex:1,minWidth:0}}>
+              <input id="newItemPhoto" type="file" accept="image/*" aria-label="新商品照片" disabled={newPhotoBusy} onChange={e=>{
+                const f=e.target.files&&e.target.files[0];
+                e.target.value="";
+                if(!f) return;
+                setNewPhotoBusy(true);
+                compressItemPhoto(f).then(url=>setNewPhoto(url)).catch(alertPhotoErr).finally(()=>setNewPhotoBusy(false));
+              }} style={{display:"block",width:"100%",fontSize:12}}/>
+              {newPhotoBusy&&<div style={{fontSize:11,color:"var(--jw-text-muted)",marginTop:4}}>裁切壓縮中…</div>}
+              {newPhoto&&!newPhotoBusy&&<button type="button" onClick={()=>setNewPhoto("")} style={{marginTop:6,padding:"4px 8px",borderRadius:6,border:`1px solid ${RED}`,background:"var(--jw-bg-card)",color:RED,fontSize:11,cursor:"pointer"}}>移除照片</button>}
+              <div style={{fontSize:11,color:"var(--jw-text-muted)",marginTop:4}}>可拍照或從相簿選擇，會裁成正方形後儲存</div>
+            </div>
+          </div>
+          <button id="addItemBtn" onClick={()=>{
             const nameZh=document.getElementById("newItemNameZh").value.trim();
             const nameEn=document.getElementById("newItemNameEn").value.trim();
             const price=parseFloat(document.getElementById("newItemPrice").value);
+            if(newPhotoBusy){alert("⚠️ 照片還在處理，請稍候");return;}
             if(!nameZh){alert("⚠️ 請輸入中文名稱");return;}
             if(!nameEn){alert("⚠️ 請輸入英文名稱");return;}
             if(isNaN(price)||price<=0){alert("⚠️ 請輸入有效價格");return;}
@@ -1524,6 +1675,7 @@ function App(){
             if(!category){alert("⚠️ 請選擇類別");return;}
             const now=Date.now(),newId="custom_"+now;
             const newItem={id:newId,name:nameZh,nameEn:nameEn,price:price,category,createdAt:now};
+            if(newPhoto) newItem.photo=newPhoto;
             if(window.fbDb){
               window.fbDb.ref(`custom_items/${newId}`).set(newItem).then(()=>{
                 alert("✅ 新商品已上架！");
@@ -1531,6 +1683,7 @@ function App(){
                 document.getElementById("newItemNameEn").value="";
                 document.getElementById("newItemPrice").value="";
                 document.getElementById("newItemCat").value="";
+                setNewPhoto("");
               }).catch(fbErr("新增商品"));
             }
           }} style={{width:"100%",background:RED,color:"var(--jw-accent-ink)",border:"none",borderRadius:8,padding:"12px",fontSize:14,cursor:"pointer",marginTop:14}}>＋ 新增商品</button>
@@ -1544,7 +1697,7 @@ function App(){
               const at=customMoveAt(c,allCatKeys);
               const st=!c.category?"未設類別，留在新品區":!catRec?"類別已不存在，留在新品區":catRec.hidden?"類別已隱藏，客人看不到":!at?"留在新品區":Date.now()>=at?"已移入正常菜單":`${Math.ceil((at-Date.now())/864e5)} 天後移入『${CAT_SHORT(c.category)}』`;
               return(
-              <div key={c.id} className="jwAdmItem" data-id={c.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,padding:"8px 10px",background:"var(--jw-bg-raised)",borderRadius:6,border:`1px solid ${BORDER}`}}>
+              <div key={c.id} className="jwAdmItem" data-id={c.id} style={{display:"flex",alignItems:"flex-start",gap:8,marginBottom:6,padding:"8px 10px",background:"var(--jw-bg-raised)",borderRadius:6,border:`1px solid ${BORDER}`}}>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{fontSize:13,fontWeight:500}}>⭐ {c.name}</div>
                   <div style={{fontSize:11,color:"var(--jw-text-muted)"}}>{c.nameEn} · R{c.price}</div>
@@ -1553,6 +1706,7 @@ function App(){
                     window.fbDb.ref(`custom_items/${c._fbKey}`).update(u).catch(fbErr("設定類別"));}} style={{marginTop:4,maxWidth:"100%",padding:"3px 4px",borderRadius:4,border:`1px solid ${BORDER}`,fontSize:11}}>
                     <option value="">類別 Category…</option>{activeCatKeys.map(n=><option key={n} value={n}>{CAT_SHORT(n)}</option>)}</select>
                   <div className="jwMoveSt" style={{fontSize:11,color:"var(--jw-amber-main)",marginTop:2}}>{st}</div>
+                  {c._fbKey&&<ItemPhotoEditor stored={typeof c.photo==="string"?c.photo:""} fallbackSrc="" path={`custom_items/${c._fbKey}/photo`} itemName={c.name}/>}
                 </div>
                 <button aria-label={`刪除 ${c.name}`} onClick={()=>{
                   if(confirm(`確定刪除「${c.name}」？`)&&window.fbDb&&c._fbKey)window.fbDb.ref(`custom_items/${c._fbKey}/hidden`).set(true).catch(fbErr("刪除商品"));
@@ -1560,12 +1714,15 @@ function App(){
               </div>);})}
             {MENU.map(cat=>{const its=cat.items.filter(i=>!(menuOverrides[i.id]&&menuOverrides[i.id].hidden));return its.length>0&&<div key={cat.cat}>
               <div style={{fontSize:11,color:NAVY,margin:"8px 0 4px",fontWeight:500}}>{cat.cat}</div>
-              {its.map(item=><div key={item.id} className="jwAdmItem" data-id={item.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:4,padding:"6px 10px",background:"var(--jw-bg-raised)",borderRadius:6}}>
-                <span style={{flex:1,fontSize:12}}>{item.name} <span style={{color:"var(--jw-text-muted)"}}>R{getPrice(item,menuOverrides[item.id])}</span></span>
+              {its.map(item=>{const ovr=menuOverrides[item.id]||{};return <div key={item.id} className="jwAdmItem" data-id={item.id} style={{display:"flex",alignItems:"flex-start",gap:8,marginBottom:4,padding:"6px 10px",background:"var(--jw-bg-raised)",borderRadius:6}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <span style={{fontSize:12}}>{item.name} <span style={{color:"var(--jw-text-muted)"}}>R{getPrice(item,ovr)}</span></span>
+                  <ItemPhotoEditor stored={typeof ovr.photo==="string"?ovr.photo:""} fallbackSrc={item.img?`assets/img/${item.img}.webp`:""} path={`menu_overrides/${item.id}/photo`} itemName={item.name}/>
+                </div>
                 <button aria-label={`刪除 ${item.name}`} onClick={()=>{
                   if(confirm(`確定刪除「${item.name}」？客人將看不到此品項（可在「已刪除品項」恢復）`)&&window.fbDb)window.fbDb.ref(`menu_overrides/${item.id}/hidden`).set(true).catch(fbErr("刪除商品"));
                 }} style={{padding:"4px 8px",borderRadius:6,border:`1px solid ${RED}`,background:"var(--jw-bg-card)",color:RED,fontSize:11,cursor:"pointer"}}>✕</button>
-              </div>)}
+              </div>;})}
             </div>;})}
           </div>
           {/* 已刪除品項：可恢復；自訂品項可永久刪除 */}
@@ -1712,7 +1869,11 @@ function App(){
     <div className="jw-qty"><button type="button" className="jw-qty__btn" onClick={onMinus} aria-label={`減少 ${name}`}><Ico n="minus" s={s}/></button><span className="jw-qty__n">{n}</span><button type="button" className="jw-qty__btn" onClick={onPlus} aria-label={`增加 ${name}`}><Ico n="plus" s={s}/></button></div>
   );
   const Pic=({item,ci})=>{
-    if(item.img) return <><img src={`assets/img/${item.img}.webp`} alt={`${item.name}（${item.imgSrc==="ai"?"AI 示意圖":"店家實拍"}）`} loading="lazy" width="320" height="320"/><span className="jw-card__src">{item.imgSrc==="ai"?"AI 示意":"實拍"}</span></>;
+    const src=itemPhotoSrc(item);
+    if(src){
+      const uploaded=src.indexOf("data:")===0;
+      return <><img src={src} alt={uploaded?item.name:`${item.name}（${item.imgSrc==="ai"?"AI 示意圖":"店家實拍"}）`} loading="lazy" width="320" height="320"/>{!uploaded&&item.img&&<span className="jw-card__src">{item.imgSrc==="ai"?"AI 示意":"實拍"}</span>}</>;
+    }
     return <div className="jw-card__ph" role="img" aria-label={`${item.name}（照片準備中）`}><Ico n={CAT_ICON[ci]||"utensils"} s={34}/></div>;
   };
   const sumTxt=`已選 ${cartItems.length} 項 · 小計 R${sub}${disc>0?` → 折後 R${total}`:""}`;
