@@ -28,3 +28,8 @@
 ### 下一步
 - Hans 確認後再決定是否 merge／push
 - 正式 Logo 若有（小美），可替換 `icons/*.png`
+
+## 2026-11-07
+- main 合併 item-photos（PR #1，後台品項照片）與 pwa-install（PNG 圖示、iOS 標籤、安裝提示）；sw 快取 v4。
+- 正式 RTDB 規則已於 11:40 部署 photo 欄位；備份 rules-backup/database.rules.prod-before-photo-20261107-113949.json。
+- 待辦：真機 iPhone/Android 測安裝與拍照上傳。

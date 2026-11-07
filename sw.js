@@ -1,5 +1,5 @@
 // Service Worker - 網路優先策略（同網域檔案離線時才用快取）
-const CACHE_NAME = 'jiangway-app-v3';
+const CACHE_NAME = 'jiangway-app-v4';
 
 self.addEventListener('install', event => {
   self.skipWaiting();
