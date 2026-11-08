@@ -481,6 +481,32 @@ function wrapReceiptText(ctx,text,maxW){
   if(cur||!out.length) out.push(cur);
   return out;
 }
+// 英文名依空白換行，塞進可印寬度；單字比一行還寬才改逐字切。
+function wrapReceiptWords(ctx,text,maxW){
+  const s=String(text==null?"":text).trim().replace(/\s+/g," ");
+  if(!s) return [];
+  const out=[];
+  let cur="";
+  s.split(" ").forEach(w=>{
+    if(!w) return;
+    const trial=cur?cur+" "+w:w;
+    if(ctx.measureText(trial).width<=maxW){ cur=trial; return; }
+    if(cur){ out.push(cur); cur=""; }
+    if(ctx.measureText(w).width<=maxW){ cur=w; return; }
+    wrapReceiptText(ctx,w,maxW).forEach(line=>{ if(line) out.push(line); });
+  });
+  if(cur) out.push(cur);
+  return out;
+}
+// 英文名用菜單的 nameEn。訂單上有就用訂單的；沒有就依 id／中文名回菜單找。都沒有就不印。
+function itemEnglishName(it,menu){
+  const saved=String(it&&it.nameEn||"").trim();
+  if(saved) return saved;
+  const list=(menu&&menu.length)?menu:[...ALL,...RETIRED_ITEMS];
+  if(!it) return "";
+  const hit=(it.id&&list.find(x=>x.id===it.id))||(it.name&&list.find(x=>x.name===it.name));
+  return hit?String(hit.nameEn||"").trim():"";
+}
 function ensureReceiptFont(){
   const jobs=[];
   if(document.fonts&&document.fonts.load){
@@ -504,7 +530,7 @@ function punchReceipt(canvas){
   ctx.putImageData(img,0,0);
   return canvas;
 }
-function renderReceiptCanvas(order){
+function renderReceiptCanvas(order,menu){
   const o=order||{};
   return ensureReceiptFont().then(()=>{
     const measure=document.createElement("canvas").getContext("2d");
@@ -527,6 +553,14 @@ function renderReceiptCanvas(order){
       ops.push({type:"row",lines,right:right||"",size,bold,top:y,lh});
       y+=lines.length*lh+4;
     };
+    const subEn=str=>{
+      measure.font=receiptFont(16,false);
+      const lines=wrapReceiptWords(measure,str,inner-10);
+      if(!lines.length) return;
+      const lh=Math.round(16*1.25);
+      ops.push({type:"text",lines,size:16,bold:false,align:"left",top:y-2,lh,indent:10});
+      y+=lines.length*lh+2;
+    };
     text("江味齋",34,true,"center",0);
     text("JiangWay",15,false,"center",6);
     rule();
@@ -544,6 +578,8 @@ function renderReceiptCanvas(order){
       const qty=Number(it.qty)||0;
       const unit=Number(it.price);
       row((it.name||"")+(qty?" ×"+qty:""), isFinite(unit)?randLabel(unit*qty):"", 22, true);
+      const en=itemEnglishName(it,menu);
+      if(en) subEn(en);
     });
     (o.addons||[]).filter(a=>a&&(Number(a.qty)||0)>0).forEach(a=>{
       const qty=Number(a.qty)||0;
@@ -570,7 +606,7 @@ function renderReceiptCanvas(order){
       ctx.font=receiptFont(op.size,op.bold);
       if(op.type==="text"){
         op.lines.forEach((ln,i)=>{
-          const x=op.align==="center"?Math.round((W-ctx.measureText(ln).width)/2):pad;
+          const x=op.align==="center"?Math.round((W-ctx.measureText(ln).width)/2):pad+(op.indent||0);
           ctx.fillText(ln,x,op.top+i*op.lh);
         });
       }else{
@@ -587,10 +623,10 @@ function rawbtImageIntent(dataUrl){
   return "intent:"+encodeURI("data:image/png;base64,"+b64)+"#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
 }
 let receiptBusy=false;
-function printOrderReceipt(order){
+function printOrderReceipt(order,menu){
   if(receiptBusy) return Promise.resolve(null);
   receiptBusy=true;
-  return renderReceiptCanvas(order).then(canvas=>{
+  return renderReceiptCanvas(order,menu).then(canvas=>{
     const url=canvas.toDataURL("image/png");
     window.__jwLastReceiptUrl=url;
     const intent=rawbtImageIntent(url);
@@ -1663,7 +1699,8 @@ function App(){
     const k=o._fbKey||String(o.no||"");
     if(receiptBusy) return;
     setPrintMark(m=>({...m,[k]:"sending"}));
-    const url=await printOrderReceipt(o);
+    const menu=[...effectiveAll,...RETIRED_ITEMS.filter(r=>!effectiveAll.some(x=>x.id===r.id))];
+    const url=await printOrderReceipt(o,menu);
     setPrintMark(m=>{ const n={...m}; if(url) n[k]="sent"; else delete n[k]; return n; });
     if(url) setTimeout(()=>setPrintMark(m=>{ if(m[k]!=="sent") return m; const n={...m}; delete n[k]; return n; }),1800);
   };
