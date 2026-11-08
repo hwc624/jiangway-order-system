@@ -452,6 +452,191 @@ function orderDateKey(o){
 }
 const ORDER_DISPLAY_LIMIT=200; // 後台訂單列表最多顯示幾筆（分析頁一律使用全部訂單）
 
+// ===== 收據列印（RawBT + 58mm 熱感機）=====
+// Q-P01 可印寬度約 48mm ≈ 384px。便宜機沒有中文字型，所以先在瀏覽器畫成黑白圖再送出。
+// RawBT 文件（https://rawbt.ru/start.html）：
+//   rawbt:data:image/png;base64,<PNG> 會直接印圖（jpeg／png 等 Android 看得懂的格式）。
+//   Chrome Android 用 intent scheme，並指定套件；沒安裝時瀏覽器會開啟 Play 商店：
+//   intent:<data>#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;
+const RECEIPT_W=384;
+const RECEIPT_FONT='"Noto Sans CJK TC","Noto Sans TC","Noto Sans CJK","Source Han Sans TC","PingFang TC","Microsoft JhengHei","Heiti TC","WenQuanYi Micro Hei","Droid Sans Fallback",sans-serif';
+function receiptFont(size,bold){ return (bold?"700 ":"400 ")+size+"px "+RECEIPT_FONT; }
+function randLabel(n){
+  const x=Number(n);
+  if(!isFinite(x)) return "";
+  const r=Math.round(x*100)/100;
+  return "R"+r;
+}
+function wrapReceiptText(ctx,text,maxW){
+  const s=String(text==null?"":text);
+  if(!s) return [""];
+  const out=[];
+  let cur="";
+  for(const ch of s){
+    if(ch==="\n"){ out.push(cur); cur=""; continue; }
+    const t=cur+ch;
+    if(cur&&ctx.measureText(t).width>maxW){ out.push(cur); cur=ch; }
+    else cur=t;
+  }
+  if(cur||!out.length) out.push(cur);
+  return out;
+}
+function ensureReceiptFont(){
+  const jobs=[];
+  if(document.fonts&&document.fonts.load){
+    ["Noto Sans CJK TC","Noto Sans TC","WenQuanYi Micro Hei","Droid Sans Fallback"].forEach(f=>{
+      jobs.push(document.fonts.load('24px "'+f+'"').catch(()=>{}));
+    });
+  }
+  const ready=(document.fonts&&document.fonts.ready)||Promise.resolve();
+  return Promise.all(jobs).then(()=>ready);
+}
+// 熱感機是 1-bit。把抗鋸齒的灰邊收成純黑／純白，筆畫偏黑，避免印出來發虛或碎點。
+function punchReceipt(canvas){
+  const ctx=canvas.getContext("2d");
+  const img=ctx.getImageData(0,0,canvas.width,canvas.height);
+  const d=img.data;
+  for(let i=0;i<d.length;i+=4){
+    const y=(d[i]*30+d[i+1]*59+d[i+2]*11)/100;
+    const v=y<200?0:255;
+    d[i]=d[i+1]=d[i+2]=v; d[i+3]=255;
+  }
+  ctx.putImageData(img,0,0);
+  return canvas;
+}
+function renderReceiptCanvas(order){
+  const o=order||{};
+  return ensureReceiptFont().then(()=>{
+    const measure=document.createElement("canvas").getContext("2d");
+    const W=RECEIPT_W, pad=16, inner=W-pad*2;
+    const ops=[];
+    let y=16;
+    const text=(str,size,bold,align,gap)=>{
+      measure.font=receiptFont(size,bold);
+      const lines=wrapReceiptText(measure,str,inner);
+      const lh=Math.round(size*1.35);
+      ops.push({type:"text",lines,size,bold,align:align||"left",top:y,lh});
+      y+=lines.length*lh+(gap==null?6:gap);
+    };
+    const rule=(gap)=>{ ops.push({type:"rule",y}); y+=2+(gap==null?10:gap); };
+    const row=(left,right,size,bold)=>{
+      measure.font=receiptFont(size,bold);
+      const rw=measure.measureText(right||"").width;
+      const lines=wrapReceiptText(measure,left,Math.max(48,inner-rw-12));
+      const lh=Math.round(size*1.35);
+      ops.push({type:"row",lines,right:right||"",size,bold,top:y,lh});
+      y+=lines.length*lh+4;
+    };
+    text("江味齋",34,true,"center",0);
+    text("JiangWay",15,false,"center",6);
+    rule();
+    text("訂單 #"+(o.no||"—"),26,true,"left",2);
+    const whenTs=o.ts?String(o.ts):(o.dateKey?String(o.dateKey):"");
+    if(whenTs) text(whenTs,18,false,"left",2);
+    if(o.name) text("顧客 "+o.name,22,true,"left",2);
+    if(o.phone) text("電話 "+o.phone,20,false,"left",2);
+    const how=pickupName(o);
+    if(how||o.pay) text([how,o.pay].filter(Boolean).join(" · "),18,false,"left",2);
+    const when=[typeof o.selDate==="string"?o.selDate:"",o.time].filter(Boolean).join(" ");
+    if(when) text("取餐 "+when,18,false,"left",2);
+    rule(8);
+    (o.items||[]).forEach(it=>{
+      const qty=Number(it.qty)||0;
+      const unit=Number(it.price);
+      row((it.name||"")+(qty?" ×"+qty:""), isFinite(unit)?randLabel(unit*qty):"", 22, true);
+    });
+    (o.addons||[]).filter(a=>a&&(Number(a.qty)||0)>0).forEach(a=>{
+      const qty=Number(a.qty)||0;
+      const unit=Number(a.addonPrice);
+      row("＋"+(a.addonName||"")+(qty?" ×"+qty:""), isFinite(unit)?randLabel(unit*qty):"", 22, true);
+    });
+    if(Number(o.disc)>0) row("折扣","-"+randLabel(o.disc),20,false);
+    rule(8);
+    if(o.note){
+      text("備註 "+o.note,20,false,"left",6);
+      rule(8);
+    }
+    row("合計", randLabel(o.total)||"R0", 28, true);
+    y+=16;
+    const canvas=document.createElement("canvas");
+    canvas.width=W; canvas.height=Math.max(y,80);
+    const ctx=canvas.getContext("2d");
+    ctx.fillStyle="#ffffff";
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle="#000000";
+    ctx.textBaseline="top";
+    ops.forEach(op=>{
+      if(op.type==="rule"){ ctx.fillRect(pad,op.y,inner,2); return; }
+      ctx.font=receiptFont(op.size,op.bold);
+      if(op.type==="text"){
+        op.lines.forEach((ln,i)=>{
+          const x=op.align==="center"?Math.round((W-ctx.measureText(ln).width)/2):pad;
+          ctx.fillText(ln,x,op.top+i*op.lh);
+        });
+      }else{
+        op.lines.forEach((ln,i)=>ctx.fillText(ln,pad,op.top+i*op.lh));
+        if(op.right) ctx.fillText(op.right,W-pad-ctx.measureText(op.right).width,op.top);
+      }
+    });
+    return punchReceipt(canvas);
+  });
+}
+// 官方 BtPrint 用 encodeURI（不會把 base64 的 + / = 編成 %XX）。只在 Android 跳 intent，避免桌面測試離開後台。
+function rawbtImageIntent(dataUrl){
+  const b64=String(dataUrl||"").slice(String(dataUrl||"").indexOf(",")+1);
+  return "intent:"+encodeURI("data:image/png;base64,"+b64)+"#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
+}
+let receiptBusy=false;
+function printOrderReceipt(order){
+  if(receiptBusy) return Promise.resolve(null);
+  receiptBusy=true;
+  return renderReceiptCanvas(order).then(canvas=>{
+    const url=canvas.toDataURL("image/png");
+    window.__jwLastReceiptUrl=url;
+    const intent=rawbtImageIntent(url);
+    window.__jwLastReceiptIntent=intent;
+    if(/Android/i.test(navigator.userAgent||"")) window.location.href=intent;
+    return url;
+  }).catch(e=>{
+    console.error("❌ 列印失敗:", e&&e.message);
+    alert("❌ 列印失敗："+((e&&e.message)||"無法產生收據"));
+    return null;
+  }).then(url=>{ receiptBusy=false; return url; });
+}
+window.renderReceiptCanvas=renderReceiptCanvas;
+window.printOrderReceipt=printOrderReceipt;
+
+// 新訂單提示音（Web Audio，不另存音檔）。瀏覽器要先有一次點擊才准出聲，所以店主按齒輪／登入時先解鎖。
+let jwAudioCtx=null;
+function unlockOrderAlert(){
+  try{
+    const AC=window.AudioContext||window.webkitAudioContext;
+    if(!AC) return;
+    if(!jwAudioCtx) jwAudioCtx=new AC();
+    if(jwAudioCtx.state==="suspended") jwAudioCtx.resume();
+  }catch(e){}
+}
+function playNewOrderAlert(){
+  try{
+    unlockOrderAlert();
+    const ctx=jwAudioCtx;
+    if(!ctx) return;
+    const t=ctx.currentTime;
+    [[880,0,0.16],[1175,0.18,0.22]].forEach(([freq,start,dur])=>{
+      const osc=ctx.createOscillator(), g=ctx.createGain();
+      osc.type="square";
+      osc.frequency.setValueAtTime(freq,t+start);
+      g.gain.setValueAtTime(0.0001,t+start);
+      g.gain.exponentialRampToValueAtTime(0.15,t+start+0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001,t+start+dur);
+      osc.connect(g); g.connect(ctx.destination);
+      osc.start(t+start); osc.stop(t+start+dur+0.03);
+    });
+  }catch(e){ console.warn("提示音無法播放:", e&&e.message); }
+}
+window.unlockOrderAlert=unlockOrderAlert;
+window.playNewOrderAlert=playNewOrderAlert;
+
 // 營業時間：週一至週六 10:30–19:00，週日公休
 function isOpenNow(){
   const n=new Date(),day=n.getDay(),m=n.getHours()*60+n.getMinutes();
@@ -896,6 +1081,9 @@ function App(){
   const [newPhoto,setNewPhoto]=useState(""); // 上架新商品：裁切後、尚未寫入的 data URL
   const [newPhotoBusy,setNewPhotoBusy]=useState(false);
   const [todayCounter,setTodayCounter]=useState(null);   // 後台：今天 order_counters 的值
+  const [orderAlert,setOrderAlert]=useState(null);     // 新訂單提示（不自動列印）
+  const [freshKeys,setFreshKeys]=useState({});         // 這次提示還沒關掉的訂單 key
+  const [printMark,setPrintMark]=useState({});         // 列印按鈕：sending / sent
   const [pForm,setPForm]=useState({type:"order_discount",label:"",pct:"",itemId:"",addonName:"",addonPrice:""});
   const [distance,setDistance]=useState(()=>String(D.distance||""));
   const [eftProof,setEftProof]=useState("");
@@ -917,6 +1105,8 @@ function App(){
     return ()=>{ document.removeEventListener("visibilitychange",f); window.removeEventListener("pagehide",f); };
   },[]);
   const wantAdminRef=useRef(false); // 使用者是否剛按了登入（登入成功後才自動進後台）
+  const ordersPrimed=useRef(false); // 後台第一次收到訂單清單只當作已讀，不響提示音
+  const seenOrderKeys=useRef(new Set());
 
   // 確認此使用者是否為店主（admin 宣告或 /staff/{uid}===true），最多等 8 秒，逾時丟出錯誤
   const checkStaff=async user=>{
@@ -1022,9 +1212,12 @@ function App(){
   },[isStaff]);
 
   // Firebase 即時同步訂單（只在店主登入後才訂閱；客人端不會下載任何訂單）
+  // 第一次快照是已經在的單，不響；之後出現新的 push key 才響鈴＋提示，不自動列印。
   useEffect(()=>{
     if(!window.fbDb||!isStaff){
       setOrders([]);
+      ordersPrimed.current=false;
+      seenOrderKeys.current=new Set();
       return;
     }
     
@@ -1040,12 +1233,37 @@ function App(){
       fbOrdersList.sort(cmpOrdersDesc);
       
       setOrders(fbOrdersList); // 全部訂單（分析頁要用全部）；列表顯示另外限制筆數
+      const keys=fbOrdersList.map(o=>o._fbKey).filter(Boolean);
+      if(!ordersPrimed.current){
+        ordersPrimed.current=true;
+        seenOrderKeys.current=new Set(keys);
+        console.log("📡 從 Firebase orders 更新訂單，共", fbOrdersList.length, "筆");
+        return;
+      }
+      const seen=seenOrderKeys.current;
+      const fresh=fbOrdersList.filter(o=>o._fbKey&&!seen.has(o._fbKey));
+      keys.forEach(k=>seen.add(k));
       console.log("📡 從 Firebase orders 更新訂單，共", fbOrdersList.length, "筆");
+      if(!fresh.length) return;
+      playNewOrderAlert();
+      setFreshKeys(prev=>{
+        const n={...prev};
+        fresh.forEach(o=>{ n[o._fbKey]=1; });
+        return n;
+      });
+      setOrderAlert(prev=>{
+        const nos=[];
+        const push=n=>{ if(n!=null&&String(n)!==""&&nos.indexOf(n)<0) nos.push(n); };
+        ((prev&&prev.nos)||[]).forEach(push);
+        fresh.forEach(o=>push(o.no));
+        const name=nos.length===1?((fresh[0]&&fresh[0].name)||(prev&&prev.name)||""):"";
+        return {nos,name};
+      });
     },error=>{
       console.error("❌ Firebase 訂單讀取錯誤:", error.message);
     });
     
-    return ()=>ordersRef.off("value",unsubscribe);
+    return ()=>{ ordersPrimed.current=false; ordersRef.off("value",unsubscribe); };
   },[isStaff]);
 
   // Firebase 同步促銷
@@ -1210,12 +1428,14 @@ function App(){
   },[mode,step,effectiveMenu.length]);
   const adjA=(id,d)=>setAddonQty(a=>({...a,[id]:Math.max(0,(a[id]||0)+d)}));
   const openStaff=()=>{
+    unlockOrderAlert(); // 點一下之後，之後的新訂單提示音才不會被瀏覽器擋住
     if(authUser&&isStaff){ setMode("admin"); return; }
     // 已登入但還在確認店主身分（剛開網頁時）：先顯示「驗證身分中…」，確認完自動進後台
     if(window.fbAuth&&window.fbAuth.currentUser&&!authReady){ wantAdminRef.current=true; setMode("admin"); return; }
     setLoginErr(""); setMode("login");
   };
   const doLogin=async ()=>{
+    unlockOrderAlert();
     if(loggingIn)return;
     const email=(emailRef.current||"").trim(), pw=pwRef.current||"";
     if(!email){setLoginErr("請輸入 Email");return;}
@@ -1439,6 +1659,14 @@ function App(){
     else{const t=document.createElement("textarea");t.value=txt;document.body.appendChild(t);t.select();document.execCommand("copy");document.body.removeChild(t);setCopied(true);setTimeout(()=>setCopied(false),2500);}
   };
   const reset=()=>{clearDraft();setErrs({});nRef.current="";phRef.current="";adRef.current="";noRef.current="";setStep(1);setNameVal("");setPhoneVal("");setCart({});setAddonQty({});setPickup("外帶");setAddr("");setPay("現金");setSelDate(null);setTime("");setNote("");setCopied(false);setOrdNo("");setFbNo(false);setDistance("");setEftProof("");setEftProofFile(null);setSubmittedTxt("");setSubmitting(false);setSaveStatus("");setPendingKey("");curKeyRef.current="";setSubmitErr("");};
+  const onPrintOrder=async o=>{
+    const k=o._fbKey||String(o.no||"");
+    if(receiptBusy) return;
+    setPrintMark(m=>({...m,[k]:"sending"}));
+    const url=await printOrderReceipt(o);
+    setPrintMark(m=>{ const n={...m}; if(url) n[k]="sent"; else delete n[k]; return n; });
+    if(url) setTimeout(()=>setPrintMark(m=>{ if(m[k]!=="sent") return m; const n={...m}; delete n[k]; return n; }),1800);
+  };
   const addPromo=()=>{
     if(!pForm.label){alert("⚠️ 請輸入促銷名稱");return;}
     if(pForm.type!=="addon"&&!pForm.pct){alert("⚠️ 請輸入折扣 %");return;}
@@ -1519,6 +1747,11 @@ function App(){
         </div>
       </div>
       <div style={{padding:"16px",maxWidth:720,margin:"0 auto"}}>
+        {orderAlert&&<div id="newOrderNotice" role="status" aria-live="assertive" style={{background:"var(--jw-amber-soft)",border:"2px solid var(--jw-amber-main)",borderRadius:10,padding:"10px 12px",marginBottom:12,fontSize:14,color:"var(--jw-amber-main)",lineHeight:1.5,fontWeight:600,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+          <span style={{flex:"1 1 180px"}}>🔔 新訂單 {orderAlert.nos.map(n=>"#"+n).join("、")}{orderAlert.name?" · "+orderAlert.name:""}{orderAlert.nos.length>1?"（"+orderAlert.nos.length+" 筆）":""}</span>
+          {adminTab!=="orders"&&<button type="button" onClick={()=>setAdminTab("orders")} style={{padding:"4px 10px",borderRadius:6,border:"1px solid var(--jw-amber-main)",background:"var(--jw-bg-card)",color:"var(--jw-amber-main)",fontSize:12,cursor:"pointer"}}>查看訂單</button>}
+          <button type="button" onClick={()=>{setOrderAlert(null);setFreshKeys({});}} style={{padding:"4px 10px",borderRadius:6,border:"1px solid var(--jw-amber-main)",background:"var(--jw-bg-card)",color:"var(--jw-amber-main)",fontSize:12,cursor:"pointer"}}>知道了</button>
+        </div>}
         {adminTab==="stock"&&<>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
             <div style={{fontSize:13,color:"var(--jw-text-muted)"}}>售完：<span style={{color:RED,fontWeight:500}}>{Object.values(soldOut).filter(Boolean).length} 項</span></div>
@@ -1848,8 +2081,10 @@ function App(){
                   // 安全檢查：依目前菜單／促銷／外送費重新計算應收金額，發現不符就標紅
                   const chk=repriceOrder(o,[...effectiveAll,...RETIRED_ITEMS.filter(r=>!effectiveAll.some(x=>x.id===r.id))],promos,delivFee);
                   const suspicious=chk.flag;
+                  const pk=o._fbKey||String(o.no||"");
+                  const mark=printMark[pk];
                   return(
-                  <div key={o._fbKey||(o.no+o.ts)} style={{background:"var(--jw-bg-card)",border:`1.5px solid ${suspicious?RED:BORDER}`,borderRadius:10,padding:"12px",marginBottom:10}}>
+                  <div key={o._fbKey||(o.no+o.ts)} style={{background:"var(--jw-bg-card)",border:`1.5px solid ${suspicious?RED:(freshKeys[o._fbKey]?"var(--jw-amber-main)":BORDER)}`,borderRadius:10,padding:"12px",marginBottom:10}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                       <div style={{flex:1}}>
                         <div style={{display:"flex",justifyContent:"space-between"}}>
@@ -1871,17 +2106,29 @@ function App(){
                         {Number(o.disc)>0&&<div className="ord-disc" style={{fontSize:12,color:"var(--jw-success-main)",fontWeight:600}}>🏷 折扣 −R{Number(o.disc)} · 合計 R{o.total}</div>}
                         {o.note&&<div style={{fontSize:11,color:"var(--jw-text-muted)",marginTop:4}}>備註：{o.note}</div>}
                       </div>
-                      <button 
-                        onClick={()=>{
-                          if(!o._fbKey){alert("❌ 找不到訂單 key，請重新整理頁面");return;}
-                          if(confirm(`確定刪除訂單 #${o.no} - ${o.name} (${o.ts})？`)){
-                            window.fbDb.ref(`orders/${o._fbKey}`).remove().then(()=>{
-                              console.log("✅ 已刪除訂單 fbKey:", o._fbKey);
-                            }).catch(fbErr("刪除訂單"));
-                          }
-                        }} 
-                        style={{padding:"4px 8px",borderRadius:6,border:`1px solid ${RED}`,background:"var(--jw-bg-card)",color:RED,fontSize:11,cursor:"pointer",whiteSpace:"nowrap",marginLeft:8}}
-                      >✕ 刪除</button>
+                      <div style={{display:"flex",flexDirection:"column",gap:6,marginLeft:8,flexShrink:0}}>
+                        <button
+                          type="button"
+                          className="jw-print"
+                          data-ord={o.no}
+                          aria-label={`Print / 列印 #${o.no}`}
+                          disabled={mark==="sending"}
+                          onClick={()=>onPrintOrder(o)}
+                          style={{padding:"4px 8px",borderRadius:6,border:`1px solid ${BORDER}`,background:"var(--jw-bg-card)",color:DARK,fontSize:11,cursor:"pointer",whiteSpace:"nowrap"}}
+                        >{mark==="sending"?"列印中…":mark==="sent"?"已送出":"Print / 列印"}</button>
+                        <button
+                          type="button"
+                          onClick={()=>{
+                            if(!o._fbKey){alert("❌ 找不到訂單 key，請重新整理頁面");return;}
+                            if(confirm(`確定刪除訂單 #${o.no} - ${o.name} (${o.ts})？`)){
+                              window.fbDb.ref(`orders/${o._fbKey}`).remove().then(()=>{
+                                console.log("✅ 已刪除訂單 fbKey:", o._fbKey);
+                              }).catch(fbErr("刪除訂單"));
+                            }
+                          }}
+                          style={{padding:"4px 8px",borderRadius:6,border:`1px solid ${RED}`,background:"var(--jw-bg-card)",color:RED,fontSize:11,cursor:"pointer",whiteSpace:"nowrap"}}
+                        >✕ 刪除</button>
+                      </div>
                     </div>
                   </div>
                 );})}
