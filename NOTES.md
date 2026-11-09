@@ -79,3 +79,16 @@
 - 英文太長就依空白換行，落在 384px 以內。加價購沒有英文名，維持只印中文。
 - sw 快取：`jiangway-app-v6`
 - 模擬器 `?emu=1`：沒有 `nameEn` 的舊單會從菜單補上英文；沒有英文名的品項不留空行；故意加長的英文會換行且不超出 384px。列印按鈕仍只在按下時出圖。
+
+## 2026-11-09 開頁就要看到最新版
+
+### 原因
+- 最早的 Service Worker（`jiangway-v1`）是 **cache-first**：有快取就先回舊的 `index.html`，不會等網路。客人開 App 先看到舊頁（那時還沒有新品輪播）。
+- 那版頁面只 `register("sw.js")`，**沒有**在新 SW 接管時重新整理。新 SW 就算 `skipWaiting`，畫面上的舊 DOM 也不會自己換掉。
+- 後來的 SW 已改成網路優先，但只對「導覽請求」加 `cache: 'no-store'`。css／圖片仍可能吃到瀏覽器 HTTP 快取。而且已裝在手機上的舊 SW 不會因為頁面自己沒寫 reload 就消失。
+- 新品輪播是另一件事：品項在 Firebase `custom_items`，頁面裡的內建菜單是立刻畫的，輪播要等 RTDB 連上才插進來，所以會晚出現。捲動本身不會觸發更新。
+
+### 修法
+- `sw.js`（快取 `jiangway-app-v7`）：同網域 GET 一律先網路且 `cache: 'no-store'`，失敗才用 Cache Storage（離線仍可開）。不把 `sw.js` 放進快取。`skipWaiting` + `clients.claim`，activate 時對已開的分頁 `client.navigate` 同一網址，讓舊頁面也被換成最新版。
+- 註冊加上 `updateViaCache: "none"`。不再用 `controllerchange` 另外 reload，避免刷兩次。
+- 新品輪播的資料在 `custom_items`，內建菜單是寫在頁面裡的，所以輪播要等 RTDB 連上才出現（跟捲動無關）。Firebase 9 compat 沒有 `enablePersistence`，改把上次的菜單記在 `localStorage`（`jw_menu_cache`）：開頁先畫出來，連上線再換成最新；離線也還看得到。
