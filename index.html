@@ -1000,6 +1000,21 @@ const DRAFT_KEY="jw_draft", DRAFT_TTL=6*3600*1000;
 function loadDraft(){ try{ const d=JSON.parse(localStorage.getItem(DRAFT_KEY)||"null"); if(!d||typeof d!=="object"||!(Date.now()-d.savedAt<DRAFT_TTL)){ localStorage.removeItem(DRAFT_KEY); return null; } return d; }catch(e){ return null; } }
 function writeDraft(d){ try{ localStorage.setItem(DRAFT_KEY,JSON.stringify({...d,savedAt:Date.now()})); }catch(e){} }
 function clearDraft(){ try{ localStorage.removeItem(DRAFT_KEY); }catch(e){} }
+// 新品輪播、售完、改價都在 Firebase，不在頁面裡。SDK 9 的 compat 版沒有 enablePersistence，
+// 所以自己記一份：開頁先畫上次的菜單（離線也看得到），連上線再換成最新。照片太大塞不進就先不存照片。
+const MENU_CACHE_KEY="jw_menu_cache";
+function loadMenuCache(){ try{ const v=JSON.parse(localStorage.getItem(MENU_CACHE_KEY)||"null"); return (v&&typeof v==="object"&&!Array.isArray(v))?v:{}; }catch(e){ return {}; } }
+function saveMenuCache(patch){
+  const write=obj=>{ localStorage.setItem(MENU_CACHE_KEY, JSON.stringify({...obj, savedAt:Date.now()})); };
+  try{ write({...loadMenuCache(), ...patch}); }
+  catch(e){
+    try{
+      const slim={...patch};
+      if(Array.isArray(slim.customItems)) slim.customItems=slim.customItems.map(it=>{ const x={...it}; delete x.photo; return x; });
+      write({...loadMenuCache(), ...slim});
+    }catch(err){}
+  }
+}
 // 新品輪播 banner：只顯示「新品且未售完」的品項；只剩 1 張不輪播、0 張整個消失（版面恢復無 banner）
 function NewBanner({list}){
   const rm=useRef(typeof matchMedia==="function"&&matchMedia("(prefers-reduced-motion: reduce)").matches).current;
@@ -1083,11 +1098,14 @@ function App(){
   const [authReady,setAuthReady]=useState(false);
   const [loginErr,setLoginErr]=useState("");const [resetMsg,setResetMsg]=useState("");
   const [loggingIn,setLoggingIn]=useState(false);
-  const [soldOut,setSoldOut]=useState({});
-  const [promos,setPromos]=useState([]);
-  const [menuOverrides,setMenuOverrides]=useState({}); // {itemId: {price, name, soldOut}}
-  const [customItems,setCustomItems]=useState([]); // 自訂新商品
-  const [catMeta,setCatMeta]=useState({}); // 類別覆蓋／自訂：id -> {key,nameZh,nameEn,builtin,hidden,order}
+  const menuCacheRef=useRef(null);
+  if(!menuCacheRef.current) menuCacheRef.current=loadMenuCache();
+  const menuCache=menuCacheRef.current;
+  const [soldOut,setSoldOut]=useState(menuCache.soldOut||{});
+  const [promos,setPromos]=useState(Array.isArray(menuCache.promos)?menuCache.promos:[]);
+  const [menuOverrides,setMenuOverrides]=useState(menuCache.menuOverrides||{}); // {itemId: {price, name, soldOut}}
+  const [customItems,setCustomItems]=useState(Array.isArray(menuCache.customItems)?menuCache.customItems:[]); // 自訂新商品（先用上次的，連線後更新）
+  const [catMeta,setCatMeta]=useState(menuCache.catMeta||{}); // 類別覆蓋／自訂：id -> {key,nameZh,nameEn,builtin,hidden,order}
   const [minOrder,setMinOrder]=useState(0);
   const [delivFee,setDelivFee]=useState(0);
   const [orders,setOrders]=useState([]); // 初始為空，只讀 Firebase
@@ -1201,6 +1219,7 @@ function App(){
     const unsubscribe=dbRef.on("value",snapshot=>{
       const data=snapshot.val()||{};
       setSoldOut(data);
+      saveMenuCache({soldOut:data});
       console.log("📡 從 Firebase 更新售完狀態:", data);
     },error=>{
       console.error("❌ Firebase 讀取錯誤:", error.message);
@@ -1310,6 +1329,7 @@ function App(){
       const list=[];
       snapshot.forEach(c=>{const v=c.val(); if(v) list.push(v);});
       setPromos(list);
+      saveMenuCache({promos:list});
       console.log("📡 從 Firebase 更新促銷，共", list.length, "筆");
     },err=>{console.warn("⚠️ 促銷讀取失敗（可能 Firebase 規則未設定）:", err.message);});
     return ()=>promosRef.off("value",unsubscribe);
@@ -1322,6 +1342,7 @@ function App(){
     const unsubscribe=menuRef.on("value",snapshot=>{
       const data=snapshot.val()||{};
       setMenuOverrides(data);
+      saveMenuCache({menuOverrides:data});
       console.log("📡 從 Firebase 更新菜單覆蓋，共", Object.keys(data).length, "項");
     },err=>{console.warn("⚠️ 菜單覆蓋讀取失敗（可能 Firebase 規則未設定）:", err.message);});
     return ()=>menuRef.off("value",unsubscribe);
@@ -1335,7 +1356,8 @@ function App(){
       const list=[];
       snapshot.forEach(c=>{const v=c.val(); if(v) list.push({...v,_fbKey:c.key});});
       setCustomItems(list);
-      console.log("📡 從 Firebase 更新自訂商品，共", list.length, "項");
+      saveMenuCache({customItems:list});
+      console.log("📡 從 Firebase 更新自訂商品，共", list.length, "筆");
     },err=>{console.warn("⚠️ 自訂商品讀取失敗（可能 Firebase 規則未設定）:", err.message);});
     return ()=>customRef.off("value",unsubscribe);
   },[]);
@@ -1348,6 +1370,7 @@ function App(){
       const data={};
       snapshot.forEach(c=>{const v=c.val(); if(v) data[c.key]={...v,_fbKey:c.key};});
       setCatMeta(data);
+      saveMenuCache({catMeta:data});
       console.log("📡 從 Firebase 更新類別，共", Object.keys(data).length, "項");
     },err=>{console.warn("⚠️ 類別讀取失敗（可能 Firebase 規則未設定）:", err.message);});
     return ()=>catRef.off("value",unsubscribe);
@@ -2473,36 +2496,13 @@ function App(){
 }
 ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
 
-// PWA Service Worker 註冊（強制檢查更新）
+// PWA Service Worker。updateViaCache:none 讓瀏覽器檢查 sw.js 時不吃 HTTP 快取。
+// 換版後的重新整理由 sw.js 的 activate 負責（client.navigate），舊頁面沒有這段監聽也會被換掉。
+// 這裡不再聽 controllerchange 去 reload，避免和 navigate 各刷一次。
 if("serviceWorker" in navigator){
-  navigator.serviceWorker.register("sw.js").then(reg=>{
+  navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then(reg=>{
     console.log("✅ Service Worker 已註冊");
-    
-    // 每次載入時主動檢查更新
     reg.update();
-    
-    // 偵測到新版本時，自動套用
-    reg.addEventListener("updatefound", ()=>{
-      const newWorker = reg.installing;
-      if(newWorker){
-        newWorker.addEventListener("statechange", ()=>{
-          if(newWorker.state === "installed" && navigator.serviceWorker.controller){
-            console.log("🆕 偵測到新版本，正在套用...");
-            // 通知新 SW 立即接管
-            newWorker.postMessage("SKIP_WAITING");
-          }
-        });
-      }
-    });
-    
-    // 當新 SW 接管時，自動重新載入頁面
-    let refreshing = false;
-    navigator.serviceWorker.addEventListener("controllerchange", ()=>{
-      if(refreshing) return;
-      refreshing = true;
-      console.log("🔄 重新載入以套用新版本");
-      window.location.reload();
-    });
   }).catch(err=>{
     console.warn("⚠️ Service Worker 註冊失敗:", err);
   });
