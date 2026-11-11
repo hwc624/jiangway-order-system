@@ -1016,7 +1016,7 @@ function saveMenuCache(patch){
   }
 }
 // 新品輪播 banner：只顯示「新品且未售完」的品項；只剩 1 張不輪播、0 張整個消失（版面恢復無 banner）
-function NewBanner({list}){
+function NewBanner({list,onOpenPhoto}){
   const rm=useRef(typeof matchMedia==="function"&&matchMedia("(prefers-reduced-motion: reduce)").matches).current;
   const [i0,setI]=useState(0),[user,setUser]=useState(rm),[hold,setHold]=useState(false),[hidden,setHidden]=useState(false);
   const viewRef=useRef(null),stRef=useRef(null);
@@ -1030,7 +1030,7 @@ function NewBanner({list}){
   return <section className="jw-banner" id="jwNewBanner" aria-roledescription="carousel" aria-label="新品推出 New arrivals"
     onMouseEnter={()=>setHold(true)} onMouseLeave={()=>setHold(false)} onTouchStart={()=>setHold(true)} onTouchEnd={()=>setHold(false)} onFocus={()=>setHold(true)} onBlur={()=>setHold(false)}>
     <div className="jw-banner__view" tabIndex={0} ref={viewRef} onScroll={onScroll}>
-      {list.map((x,k)=>{const src=itemPhotoSrc(x);const uploaded=!!(src&&src.indexOf("data:")===0);return <div className="jw-slide" key={x.id} role="group" aria-roledescription="slide" aria-label={`第 ${k+1} 張，共 ${n} 張`} aria-hidden={n>1&&k!==i?"true":undefined}>
+      {list.map((x,k)=>{const src=itemPhotoSrc(x);const uploaded=!!(src&&src.indexOf("data:")===0);return <div className={"jw-slide"+(src&&onOpenPhoto?" jw-slide--zoom":"")} key={x.id} role="group" aria-roledescription="slide" aria-label={`第 ${k+1} 張，共 ${n} 張`} aria-hidden={n>1&&k!==i?"true":undefined} onClick={src&&onOpenPhoto?e=>{e.stopPropagation();onOpenPhoto(x);}:undefined}>
         {src&&<img src={src} alt="" loading={k?"lazy":undefined}/>}
         {src&&!uploaded&&x.img&&<span className="jw-slide__src">{x.imgSrc==="ai"?"AI 示意":"實拍"}</span>}
         <div className="jw-slide__txt"><span className="jw-slide__tag">新品推出</span><Fit className="jw-slide__h" min={12}>{x.name}<b>R{x.price}</b></Fit>{x.nameEn&&<Fit as="p" className="jw-slide__p" min={10}>{x.nameEn}</Fit>}</div>
@@ -1090,6 +1090,68 @@ function InstallHint(){
   );
 }
 
+function PhotoZoom({item,onClose}){
+  const src=item?itemPhotoSrc(item):"";
+  const closeBtn=useRef(null);
+  const pushed=useRef(false);
+  useEffect(()=>{
+    if(!item||!src) return;
+    const html=document.documentElement;
+    const body=document.body;
+    const y=window.scrollY;
+    const prev={htmlOverflow:html.style.overflow,bodyOverflow:body.style.overflow,bodyPos:body.style.position,bodyTop:body.style.top,bodyLeft:body.style.left,bodyRight:body.style.right,bodyWidth:body.style.width};
+    html.style.overflow="hidden";
+    body.style.overflow="hidden";
+    body.style.position="fixed";
+    body.style.top="-"+y+"px";
+    body.style.left="0";
+    body.style.right="0";
+    body.style.width="100%";
+    const onKey=e=>{if(e.key==="Escape"){e.preventDefault();onClose();}};
+    const onPop=()=>{pushed.current=false;onClose();};
+    history.pushState({jwZoom:1},"");
+    pushed.current=true;
+    window.addEventListener("keydown",onKey);
+    window.addEventListener("popstate",onPop);
+    if(closeBtn.current) closeBtn.current.focus();
+    return ()=>{
+      html.style.overflow=prev.htmlOverflow;
+      body.style.overflow=prev.bodyOverflow;
+      body.style.position=prev.bodyPos;
+      body.style.top=prev.bodyTop;
+      body.style.left=prev.bodyLeft;
+      body.style.right=prev.bodyRight;
+      body.style.width=prev.bodyWidth;
+      window.scrollTo(0,y);
+      window.removeEventListener("keydown",onKey);
+      window.removeEventListener("popstate",onPop);
+      if(pushed.current&&history.state&&history.state.jwZoom){
+        pushed.current=false;
+        history.back();
+      }
+    };
+  },[item,src,onClose]);
+  if(!item||!src) return null;
+  const uploaded=src.indexOf("data:")===0;
+  const badge=!uploaded&&item.img?(item.imgSrc==="ai"?"AI 示意":"實拍"):"";
+  return (
+    <div className="jw-zoom" id="jwZoom" role="dialog" aria-modal="true" aria-labelledby="jwZoomTitle" data-item-id={item.id} onClick={onClose}>
+      <button ref={closeBtn} type="button" className="jw-zoom__x" aria-label="關閉 Close" onClick={e=>{e.stopPropagation();onClose();}}>✕</button>
+      <div className="jw-zoom__box" onClick={e=>e.stopPropagation()}>
+        <div className="jw-zoom__frame">
+          <img className="jw-zoom__img" src={src} alt={uploaded?item.name:`${item.name}（${item.imgSrc==="ai"?"AI 示意圖":"店家實拍"}）`}/>
+          {badge&&<span className="jw-zoom__src">{badge}</span>}
+        </div>
+        <div className="jw-zoom__cap">
+          <h3 id="jwZoomTitle" className="jw-zoom__name">{item.name}</h3>
+          {item.nameEn&&<p className="jw-zoom__en">{item.nameEn}</p>}
+          <p className="jw-zoom__price">R{item.price}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function App(){
   const [mode,setMode]=useState("customer");
   const [adminTab,setAdminTab]=useState("stock");
@@ -1114,6 +1176,9 @@ function App(){
   const [nameVal,setNameVal]=useState(()=>String(D.name||""));
   const [phoneVal,setPhoneVal]=useState(()=>String(D.phone||""));
   const [cart,setCart]=useState(()=>(D.cart&&typeof D.cart==="object")?D.cart:{});
+  const [zoomItem,setZoomItem]=useState(null);
+  const openZoom=useCallback(item=>{if(itemPhotoSrc(item))setZoomItem(item);},[]);
+  const closeZoom=useCallback(()=>setZoomItem(null),[]);
   const [addonQty,setAddonQty]=useState(()=>(D.addonQty&&typeof D.addonQty==="object")?D.addonQty:{});
   const [pickup,setPickup]=useState(()=>["外帶","外送","內用"].includes(D.pickup)?D.pickup:"外帶");
   const [addr,setAddr]=useState(()=>String(D.addr||""));
@@ -2231,9 +2296,9 @@ function App(){
     const src=itemPhotoSrc(item);
     if(src){
       const uploaded=src.indexOf("data:")===0;
-      return <><img src={src} alt={uploaded?item.name:`${item.name}（${item.imgSrc==="ai"?"AI 示意圖":"店家實拍"}）`} loading="lazy" width="320" height="320"/>{!uploaded&&item.img&&<span className="jw-card__src">{item.imgSrc==="ai"?"AI 示意":"實拍"}</span>}</>;
+      return <button type="button" className="jw-card__pic jw-card__pic--zoom" onClick={e=>{e.preventDefault();e.stopPropagation();openZoom(item);}} aria-label={`查看「${item.name}」照片 View photo`}><img src={src} alt={uploaded?item.name:`${item.name}（${item.imgSrc==="ai"?"AI 示意圖":"店家實拍"}）`} loading="lazy" width="320" height="320"/>{!uploaded&&item.img&&<span className="jw-card__src">{item.imgSrc==="ai"?"AI 示意":"實拍"}</span>}</button>;
     }
-    return <div className="jw-card__ph" role="img" aria-label={`${item.name}（照片準備中）`}><Ico n={CAT_ICON[ci]||"utensils"} s={34}/></div>;
+    return <div className="jw-card__pic"><div className="jw-card__ph" role="img" aria-label={`${item.name}（照片準備中）`}><Ico n={CAT_ICON[ci]||"utensils"} s={34}/></div></div>;
   };
   const sumTxt=`已選 ${cartItems.length} 項 · 小計 R${sub}${disc>0?` → 折後 R${total}`:""}`;
 
@@ -2277,7 +2342,7 @@ function App(){
 
         {step===2&&<><div className="jw-layout">
           <main className="jw-menu">
-            <NewBanner list={newBannerList}/>
+            <NewBanner list={newBannerList} onOpenPhoto={openZoom}/>
             {effectiveMenu.map((cat,ci)=>(
               <section key={cat.cat} className="jw-section" id={`jw-sec-${ci}`}>
                 <header className="jw-section__head"><span className="jw-section__num">{String(ci+1).padStart(2,"0")}</span><h2 className="jw-section__title" style={{fontSize:22}}>{cat.cat}</h2></header>
@@ -2289,7 +2354,7 @@ function App(){
                   const dp=ip?itemDiscPrice(item.price,ip.pct):null;
                   return(
                     <article key={item.id} className={"jw-card"+(out?" jw-card--soldout":q?" jw-card--selected":"")}>
-                      <div className="jw-card__pic"><Pic item={item} ci={ci}/></div>
+                      <Pic item={item} ci={ci}/>
                       <div className="jw-card__body">
                         <Fit as="h4" className="jw-card__name" min={12} style={{textDecoration:out?"line-through":"none"}}>{item.name}{ip&&!out&&<> <span className="jw-badge jw-badge--sample">-{ip.pct}% OFF</span></>}</Fit>
                         <Fit as="p" className="jw-card__en" min={11}>{item.nameEn}</Fit>
@@ -2491,6 +2556,7 @@ function App(){
           </div>}
           <div style={{textAlign:"center",marginTop:8}}><button onClick={reset} className="jw-btn jw-btn--ghost">+ 新增訂單 New Order</button></div>
         </main>}
+      {zoomItem&&<PhotoZoom item={zoomItem} onClose={closeZoom}/>}
     </div>
   );
 }

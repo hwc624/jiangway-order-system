@@ -1,7 +1,7 @@
 // 網路優先：開頁先向網路要最新版，失敗才用這份快取（離線仍可點餐）。
 // 舊版曾把整站 cache-first（先回快取），已安裝的手機會一直先看到舊頁，
 // 直到新的 SW 在 activate 裡把那些分頁導回最新網址。
-const CACHE_NAME = 'jiangway-app-v7';
+const CACHE_NAME = 'jiangway-app-v8';
 
 function isHtmlRequest(request, url) {
   return request.mode === 'navigate'
