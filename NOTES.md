@@ -93,7 +93,15 @@
 - 註冊加上 `updateViaCache: "none"`。不再用 `controllerchange` 另外 reload，避免刷兩次。
 - 新品輪播的資料在 `custom_items`，內建菜單是寫在頁面裡的，所以輪播要等 RTDB 連上才出現（跟捲動無關）。Firebase 9 compat 沒有 `enablePersistence`，改把上次的菜單記在 `localStorage`（`jw_menu_cache`）：開頁先畫出來，連上線再換成最新；離線也還看得到。
 
-## 2026-11-11 新品排第一（分支 new-items-first，未 commit／未推）
+## 2026-11-11 新品排第一（已合併）
 - `effectiveMenu` 把「⭐ 新品 NEW ITEMS」移到第一位，分類分頁與菜單區塊一起變成第一個。
+- 已作為 PR #5 合併進 `main`（`fadc534`），2026-11-11 已上線；sw 快取當時為 `jiangway-app-v7`。
 - 模擬器實測 4 項通過（新品分頁第一且 active、#jw-sec-0 為新品、點分頁捲動正確、無新品時自動消失）；截圖 /workspace/jw-new-first/。
-- 下一步：等 Hans 說「點餐APP 推」再開 PR 合併。菜單資料 isNew:true 的品項只在輪播，不在新品區（Hans 未要求改）。
+- 菜單資料 isNew:true 的品項只在輪播，不在新品區（Hans 未要求改）。
+
+## 2026-11-11 選餐照片點擊放大（分支 feat/photo-zoom，未推）
+- 客人在選餐頁點有照片的菜色小圖（上傳照片或內建靜態圖），會跳出放大檢視：深色遮罩、照片約 90vw／80vh 且 object-fit contain、底下顯示中文名、英文名、價格，以及適用的「實拍／AI 示意」標籤。
+- 點 ✕、點遮罩空白處、按 Escape 或瀏覽器返回都會關閉。點照片不會加入購物車。沒有照片的霓虹佔位圖不會打開。開啟時鎖住背景捲動。
+- 上方新品輪播若該張有照片，點擊同樣會打開放大檢視。
+- sw 快取改為 `jiangway-app-v8`。未 push、未合併、未部署、未動正式 Firebase。
+- 本機只以 `http://127.0.0.1:8866/index.html?emu=1` 在模擬器實測；截圖 /workspace/jw-photo-zoom/。

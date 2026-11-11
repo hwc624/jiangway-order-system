@@ -209,3 +209,19 @@ select.jw-field__input{appearance:none;padding-left:var(--jw-sp-4)}
 .jw-install__body{flex:1;display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .jw-install__btn{min-height:40px;padding:0 14px;font-size:13px;width:auto}
 .jw-install__x{position:absolute;top:0;right:0;width:44px;height:44px;color:var(--jw-text-muted);display:grid;place-items:center;cursor:pointer;border:0;background:none;font-size:16px}
+
+/* 選餐照片放大檢視 */
+.jw-card__pic img{width:100%;height:100%;object-fit:cover;display:block}
+button.jw-card__pic{display:block;width:100%;border:0;padding:0;font:inherit;color:inherit;cursor:zoom-in}
+button.jw-card__pic:focus-visible{outline:3px solid var(--jw-amber-main);outline-offset:2px}
+.jw-zoom{position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;padding:var(--jw-sp-8) var(--jw-sp-4) var(--jw-sp-6);background:rgba(22,23,27,.88);overscroll-behavior:none}
+.jw-zoom__x{position:absolute;top:calc(var(--jw-sp-2) + env(safe-area-inset-top,0px));right:var(--jw-sp-2);width:var(--jw-tap);height:var(--jw-tap);border:0;border-radius:var(--jw-r-pill);background:var(--jw-bg-raised);color:var(--jw-text-main);font-size:20px;line-height:1;cursor:pointer;display:grid;place-items:center;z-index:1;box-shadow:var(--jw-shadow-raised)}
+.jw-zoom__x:focus-visible{outline:none;box-shadow:var(--jw-focus-ring)}
+.jw-zoom__box{display:flex;flex-direction:column;align-items:center;max-width:100%;max-height:100%}
+.jw-zoom__frame{position:relative;display:flex;align-items:center;justify-content:center}
+.jw-zoom__img{display:block;max-width:90vw;max-height:min(80vh,calc(100vh - 160px));width:auto;height:min(80vh,calc(100vh - 160px),90vw);object-fit:contain;border-radius:var(--jw-r-lg);box-shadow:var(--jw-shadow-raised)}
+.jw-zoom__src{position:absolute;left:var(--jw-sp-3);bottom:var(--jw-sp-3);font-size:11px;font-weight:700;line-height:1;padding:5px 8px;border-radius:var(--jw-r-sm);background:rgba(22,23,27,.8);color:var(--jw-text-main);border:1px solid var(--jw-line-strong)}
+.jw-zoom__cap{text-align:center;margin-top:var(--jw-sp-4);max-width:min(90vw,520px)}
+.jw-zoom__name{font-size:var(--jw-fs-xl);font-weight:800;color:var(--jw-text-main);line-height:1.3}
+.jw-zoom__en{font-size:var(--jw-fs-sm);color:var(--jw-text-muted);margin-top:var(--jw-sp-1)}
+.jw-zoom__price{font-size:var(--jw-fs-2xl);font-weight:900;color:var(--jw-amber-main);margin-top:var(--jw-sp-2)}
