@@ -1432,14 +1432,14 @@ function App(){
   const guestVisible=visibleAll.filter(i=>!inHiddenCat(i));
   const mapItem=i=>{const ovr=menuOverrides[i.id];return ovr?{...i,price:getPrice(i,ovr),name:ovr.name||i.name,nameEn:ovr.nameEn||i.nameEn,photo:typeof ovr.photo==="string"?ovr.photo:""}:{...i,price:getPrice(i,null)};};
   const effectiveMenu=[
+    {cat:"⭐ 新品 NEW ITEMS",items:customItems.filter(c=>!c.hidden&&!customMoved(c,allCatKeys)&&!catIsHidden(c.category)).map(toCustom)},
     ...allCats.filter(c=>!c.hidden).map(cat=>({
       cat:cat.key,
       items:[
         ...(cat.builtin?(cat.items||[]).filter(i=>!(menuOverrides[i.id]&&menuOverrides[i.id].hidden)).map(mapItem):[]),
         ...customItems.filter(c=>!c.hidden&&customMoved(c,allCatKeys)&&c.category===cat.key).map(toCustom)
       ]
-    })),
-    {cat:"⭐ 新品 NEW ITEMS",items:customItems.filter(c=>!c.hidden&&!customMoved(c,allCatKeys)&&!catIsHidden(c.category)).map(toCustom)}
+    }))
   ].filter(cat=>cat.items.length>0);
   const countCatItems=key=>{
     const b=MENU.find(c=>c.cat===key);

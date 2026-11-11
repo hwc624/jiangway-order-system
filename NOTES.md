@@ -92,3 +92,8 @@
 - `sw.js`（快取 `jiangway-app-v7`）：同網域 GET 一律先網路且 `cache: 'no-store'`，失敗才用 Cache Storage（離線仍可開）。不把 `sw.js` 放進快取。`skipWaiting` + `clients.claim`，activate 時對已開的分頁 `client.navigate` 同一網址，讓舊頁面也被換成最新版。
 - 註冊加上 `updateViaCache: "none"`。不再用 `controllerchange` 另外 reload，避免刷兩次。
 - 新品輪播的資料在 `custom_items`，內建菜單是寫在頁面裡的，所以輪播要等 RTDB 連上才出現（跟捲動無關）。Firebase 9 compat 沒有 `enablePersistence`，改把上次的菜單記在 `localStorage`（`jw_menu_cache`）：開頁先畫出來，連上線再換成最新；離線也還看得到。
+
+## 2026-11-11 新品排第一（分支 new-items-first，未 commit／未推）
+- `effectiveMenu` 把「⭐ 新品 NEW ITEMS」移到第一位，分類分頁與菜單區塊一起變成第一個。
+- 模擬器實測 4 項通過（新品分頁第一且 active、#jw-sec-0 為新品、點分頁捲動正確、無新品時自動消失）；截圖 /workspace/jw-new-first/。
+- 下一步：等 Hans 說「點餐APP 推」再開 PR 合併。菜單資料 isNew:true 的品項只在輪播，不在新品區（Hans 未要求改）。
